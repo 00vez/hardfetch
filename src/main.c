@@ -4,7 +4,6 @@
 #include "kernel.h"
 #include "uptime.h"
 #include "shell.h"
-#include "ip_addr.h"
 #include "gpu.h"
 #include "cpu.h"
 #include "memory.h"
@@ -79,40 +78,28 @@ int main(int argc, char* argv[])
 
     print_header("hardfetch v" VERSION);
     print_user_host();
-    print_summary_line("");
-    print_summary_line(get_summary_line());
-
-    print_newline();
-    print_section_title("System");
-    print_newline();
-    print_system_items();
     print_newline();
 
-    print_section_title("CPU + RAM");
-    print_newline();
-    print_cpu_ram_items();
-    print_newline();
-
-    print_section_title("GPU 1");
-    print_newline();
-    print_gpu1_items();
+    print_os_info();
+    print_host_info();
+    print_kernel_info();
+    print_uptime_info();
+    print_shell_info();
     print_newline();
 
-    print_section_title("GPU 2");
-    print_newline();
-    print_gpu2_items();
+    print_cpu_info();
+    print_memory_info();
     print_newline();
 
-    print_section_title("Storage");
+    print_gpu_info();
     print_newline();
-    print_storage_items();
+
+    print_storage_info();
     print_newline();
 
     if (show_net) {
         net_wait();
-        print_section_title("Network");
-        print_newline();
-        net_print_new();
+        net_print();
         print_newline();
     }
 
