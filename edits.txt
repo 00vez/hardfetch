@@ -1,0 +1,1219 @@
+Here are the edits you need to apply manually:
+1. shell.c - Replace the print_shell_info function and add get_shell_info:
+// Add after get_ps_version_from_reg function (around line 111)
+
+static char s_shell_buf[256] = {0};
+static int s_shell_initialized = 0;
+
+static void init_shell_info(void)
+{
+    if (s_shell_initialized) return;
+
+    wchar_t fullPath[1024] = {0};
+    const char* shell = detect_shell_name(fullPath, 1024);
+    if (!shell[0]) {
+        s_shell_buf[0] = '\0';
+        s_shell_initialized = 1;
+        return;
+    }
+
+    int is_pwsh = 0;
+    {
+        wchar_t copy[1024];
+        wcsncpy_s(copy, 1024, fullPath, _TRUNCATE);
+        lower_str(copy);
+        is_pwsh = (wcsstr(copy, L"pwsh") != NULL);
+    }
+
+    char version[128] = {0};
+
+    if (is_pwsh) {
+        get_ps_version_from_reg("SOFTWARE\\Microsoft\\PowerShellCore\\3\\PowerShellEngine",
+                                version, sizeof(version));
+        if (!version[0])
+            get_file_version(fullPath, version, sizeof(version));
+    } else if (strcmp(shell, "Windows PowerShell") == 0) {
+        get_ps_version_from_reg("SOFTWARE\\Microsoft\\PowerShell\\3\\PowerShellEngine",
+                                version, sizeof(version));
+        if (!version[0])
+            get_ps_version_from_reg("SOFTWARE\\Microsoft\\PowerShell\\1\\PowerShellEngine",
+                                    version, sizeof(version));
+    } else {
+        get_file_version(fullPath, version, sizeof(version));
+    }
+
+    size_t len = strlen(version);
+    while (len > 0 && (version[len - 1] == '0' || version[len - 1] == '.')) {
+        if (len > 1 && version[len - 2] == '.' && version[len - 1] == '0')
+            { len--; }
+        else if (version[len - 1] == '.')
+            { len--; }
+        else
+            break;
+    }
+    version[len] = '\0';
+
+    if (version[0])
+        snprintf(s_shell_buf, sizeof(s_shell_buf), "%s %s", shell, version);
+    else
+        snprintf(s_shell_buf, sizeof(s_shell_buf), "%s", shell);
+
+    s_shell_initialized = 1;
+}
+
+void print_shell_info(void)
+{
+    init_shell_info();
+    if (s_shell_buf[0])
+        print_block("Shell", s_shell_buf);
+}
+
+const char* get_shell_info(void)
+{
+    init_shell_info();
+    return s_shell_buf;
+}
+2. uptime.h - Add getter:
+#ifndef HF_UPTIME_H
+#define HF_UPTIME_H
+
+void print_uptime_info(void);
+const char* get_uptime_str(void);
+
+#endif
+3. uptime.c - Replace print_uptime_info and add get_uptime_str:
+#include "uptime.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <windows.h>
+
+static char s_uptime_buf[128] = {0};
+static int s_uptime_initialized = 0;
+
+static void init_uptime(void)
+{
+    if (s_uptime_initialized) return;
+
+    ULONGLONG ms = GetTickCount64();
+    ULONGLONG totalSeconds = ms / 1000;
+    ULONGLONG minutes = (totalSeconds / 60) % 60;
+    ULONGLONG hours = (totalSeconds / 3600) % 24;
+    ULONGLONG days = totalSeconds / 86400;
+
+    if (days > 0)
+        snprintf(s_uptime_buf, sizeof(s_uptime_buf), "%llud %lluh %llum", days, hours, minutes);
+    else if (hours > 0)
+        snprintf(s_uptime_buf, sizeof(s_uptime_buf), "%lluh %llum", hours, minutes);
+    else
+        snprintf(s_uptime_buf, sizeof(s_uptime_buf), "%llum", minutes > 0 ? minutes : 1);
+
+    s_uptime_initialized = 1;
+}
+
+void print_uptime_info(void)
+{
+    init_uptime();
+    if (s_uptime_buf[0])
+        print_block("Uptime", s_uptime_buf);
+}
+
+const char* get_uptime_str(void)
+{
+    init_uptime();
+    return s_uptime_buf;
+}
+4. kernel.h - Add getter:
+#ifndef HF_KERNEL_H
+#define HF_KERNEL_H
+
+void print_kernel_info(void);
+const char* get_kernel_str(void);
+
+#endif
+5. kernel.c - Replace print_kernel_info and add get_kernel_str:
+#include "kernel.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <windows.h>
+
+static char s_kernel_buf[128] = {0};
+static int s_kernel_initialized = 0;
+
+static void init_kernel(void)
+{
+    if (s_kernel_initialized) return;
+
+    char buildStr[64] = {0};
+    DWORD ubr = 0;
+
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+            "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD size = sizeof(buildStr);
+        if (RegQueryValueExA(hKey, "CurrentBuildNumber", NULL, NULL, (LPBYTE)buildStr, &size) != ERROR_SUCCESS)
+            buildStr[0] = '\0';
+
+        size = sizeof(ubr);
+        if (RegQueryValueExA(hKey, "UBR", NULL, NULL, (LPBYTE)&ubr, &size) != ERROR_SUCCESS)
+            ubr = 0;
+
+        RegCloseKey(hKey);
+    }
+
+    if (buildStr[0]) {
+        if (ubr > 0)
+            snprintf(s_kernel_buf, sizeof(s_kernel_buf), "WIN32_NT 10.0.%s.%lu", buildStr, (unsigned long)ubr);
+        else
+            snprintf(s_kernel_buf, sizeof(s_kernel_buf), "WIN32_NT 10.0.%s", buildStr);
+    }
+
+    s_kernel_initialized = 1;
+}
+
+void print_kernel_info(void)
+{
+    init_kernel();
+    if (s_kernel_buf[0])
+        print_block("Kernel", s_kernel_buf);
+}
+
+const char* get_kernel_str(void)
+{
+    init_kernel();
+    return s_kernel_buf;
+}
+5. ip_addr.h - Add getter:
+#ifndef HF_IP_ADDR_H
+#define HF_IP_ADDR_H
+
+void print_ip_info(void);
+const char* get_ip_str(void);
+
+#endif
+6. ip_addr.c - Replace print_ip_info and add get_ip_str:
+#include "ip_addr.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <windows.h>
+
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
+
+#ifndef IF_TYPE_LOOPBACK
+#define IF_TYPE_LOOPBACK 24
+#endif
+
+static char s_ip_buf[256] = {0};
+static int s_ip_initialized = 0;
+
+static void init_ip(void)
+{
+    if (s_ip_initialized) return;
+
+    IP_ADAPTER_ADDRESSES* buf = NULL;
+    ULONG bufLen = 0;
+    DWORD ret;
+
+    for (int i = 0; i < 4; i++) {
+        ret = GetAdaptersAddresses(AF_INET,
+            GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+            NULL, buf, &bufLen);
+        if (ret == ERROR_SUCCESS)
+            break;
+        if (ret == ERROR_BUFFER_OVERFLOW) {
+            free(buf);
+            buf = (IP_ADAPTER_ADDRESSES*)malloc(bufLen);
+            if (!buf) return;
+        } else {
+            free(buf);
+            return;
+        }
+    }
+
+    if (ret != ERROR_SUCCESS) {
+        free(buf);
+        s_ip_initialized = 1;
+        return;
+    }
+
+    IP_ADAPTER_ADDRESSES* best = NULL;
+    int best_priority = 999;
+
+    for (IP_ADAPTER_ADDRESSES* a = buf; a; a = a->Next) {
+        if (a->OperStatus != IfOperStatusUp) continue;
+        if ((ULONG)a->IfType == IF_TYPE_LOOPBACK) continue;
+
+        ULONG type = (ULONG)a->IfType;
+
+        int prio;
+        if (type == IF_TYPE_IEEE80211)            prio = 0;
+        else if (type == IF_TYPE_ETHERNET_CSMACD) prio = 1;
+        else if (type == 131)                    prio = 3;
+        else                                      prio = 2;
+
+        if (prio >= best_priority) continue;
+        best_priority = prio;
+        best = a;
+    }
+
+    if (best) {
+        for (IP_ADAPTER_UNICAST_ADDRESS* u = best->FirstUnicastAddress; u; u = u->Next) {
+            if (u->Address.lpSockaddr->sa_family != AF_INET) continue;
+
+            SOCKADDR_IN* sa = (SOCKADDR_IN*)u->Address.lpSockaddr;
+            char ipStr[64];
+            inet_ntop(AF_INET, &sa->sin_addr, ipStr, sizeof(ipStr));
+
+            ULONG prefixLen = u->OnLinkPrefixLength ? u->OnLinkPrefixLength : 0;
+
+            snprintf(s_ip_buf, sizeof(s_ip_buf), "%s/%lu", ipStr, prefixLen);
+            free(buf);
+            s_ip_initialized = 1;
+            return;
+        }
+    }
+
+    free(buf);
+    s_ip_initialized = 1;
+}
+
+void print_ip_info(void)
+{
+    init_ip();
+    if (s_ip_buf[0])
+        print_block("IP", s_ip_buf);
+}
+
+const char* get_ip_str(void)
+{
+    init_ip();
+    return s_ip_buf;
+}
+7. host.h - Add getter:
+#ifndef HF_HOST_H
+#define HF_HOST_H
+
+void print_host_info(void);
+const char* get_host_str(void);
+
+#endif
+8. host.c - Replace print_host_info and add get_host_str:
+#include "host.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <windows.h>
+
+static char s_host_buf[256] = {0};
+static int s_host_initialized = 0;
+
+static void init_host(void)
+{
+    if (s_host_initialized) return;
+
+    char product[256] = {0};
+
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+            "HARDWARE\\DESCRIPTION\\System\\BIOS",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD size = sizeof(product);
+        RegQueryValueExA(hKey, "BaseBoardProduct", NULL, NULL, (LPBYTE)product, &size);
+        RegCloseKey(hKey);
+    }
+
+    if (product[0])
+        strcpy_s(s_host_buf, sizeof(s_host_buf), product);
+
+    s_host_initialized = 1;
+}
+
+void print_host_info(void)
+{
+    init_host();
+    if (s_host_buf[0])
+        print_block("Host", s_host_buf);
+}
+
+const char* get_host_str(void)
+{
+    init_host();
+    return s_host_buf;
+}
+9. cpu.h - Add getter:
+#ifndef HF_CPU_H
+#define HF_CPU_H
+
+void print_cpu_info(void);
+void print_cpu_temp_power(double load);
+const char* get_cpu_main_str(void);
+const char* get_cpu_detail_str(void);
+
+#endif
+10. cpu.c - Replace print_cpu_info and add getters:
+#include "cpu.h"
+#include "cpu_temp.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
+#include <pdh.h>
+
+static void rtrim(char* s)
+{
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t'))
+        s[--n] = '\0';
+}
+
+static char s_cpu_main[300] = {0};
+static char s_cpu_detail[256] = {0};
+static int s_cpu_initialized = 0;
+
+static void init_cpu(void)
+{
+    if (s_cpu_initialized) return;
+
+    char name[256] = {0};
+    DWORD mhz = 0;
+    DWORD numLogical = 0;
+
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+            "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD size = sizeof(name);
+        if (RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, (LPBYTE)name, &size) != ERROR_SUCCESS)
+            name[0] = '\0';
+        rtrim(name);
+
+        size = sizeof(mhz);
+        RegQueryValueExA(hKey, "~MHz", NULL, NULL, (LPBYTE)&mhz, &size);
+
+        RegCloseKey(hKey);
+    }
+
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    numLogical = si.dwNumberOfProcessors;
+
+    unsigned int freqMhz = mhz;
+    PDH_HQUERY pdhQuery;
+    if (PdhOpenQueryA(NULL, 0, &pdhQuery) == ERROR_SUCCESS) {
+        PDH_HCOUNTER freqCounter;
+        if (PdhAddCounterA(pdhQuery, "\\Processor Performance(PPM_Processor_0)\\Processor Frequency", 0, &freqCounter) == ERROR_SUCCESS ||
+            PdhAddCounterA(pdhQuery, "\\Processor Information(_Total)\\Processor Frequency", 0, &freqCounter) == ERROR_SUCCESS) {
+            PdhCollectQueryData(pdhQuery);
+            Sleep(50);
+            PdhCollectQueryData(pdhQuery);
+            PDH_FMT_COUNTERVALUE val;
+            if (PdhGetFormattedCounterValue(freqCounter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, NULL, &val) == ERROR_SUCCESS && val.CStatus == 0)
+                freqMhz = (unsigned int)(val.doubleValue + 0.5);
+        }
+
+        PDH_HCOUNTER pctCounter;
+        if (PdhAddCounterA(pdhQuery, "\\Processor Performance(PPM_Processor_0)\\% of Maximum Frequency", 0, &pctCounter) == ERROR_SUCCESS) {
+            PdhCollectQueryData(pdhQuery);
+            Sleep(50);
+            PdhCollectQueryData(pdhQuery);
+            PDH_FMT_COUNTERVALUE val;
+            if (PdhGetFormattedCounterValue(pctCounter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, NULL, &val) == ERROR_SUCCESS && val.CStatus == 0 && val.doubleValue > 0) {
+                double pct = val.doubleValue;
+                if (pct < 99.5 && pct > 0) {
+                    unsigned int boostMhz = (unsigned int)(freqMhz / (pct / 100.0) + 0.5);
+                    if (boostMhz > freqMhz) freqMhz = boostMhz;
+                }
+            }
+        }
+        PdhCloseQuery(pdhQuery);
+    }
+
+    // Strip " N-Core Processor" / " N-Core" suffix from name
+    char shortName[256];
+    strcpy_s(shortName, sizeof(shortName), name);
+    char* suffix = strstr(shortName, "-Core");
+    if (suffix) {
+        char* p = suffix - 1;
+        while (p > shortName && *p >= '0' && *p <= '9') p--;
+        if (*p == ' ') *p = '\0';
+    }
+
+    // Build main line
+    int pos = 0;
+    if (shortName[0])
+        pos += snprintf(s_cpu_main + pos, sizeof(s_cpu_main) - pos, "%s", shortName);
+    else
+        pos += snprintf(s_cpu_main + pos, sizeof(s_cpu_main) - pos, "Unknown CPU");
+    if (numLogical > 0)
+        pos += snprintf(s_cpu_main + pos, sizeof(s_cpu_main) - pos, " (%lu)", (unsigned long)numLogical);
+    if (freqMhz > 0)
+        pos += snprintf(s_cpu_main + pos, sizeof(s_cpu_main) - pos, " @ %.2f GHz", freqMhz / 1000.0);
+
+    // Detail line: Load + Temp
+    double load = 0.0;
+    FILETIME idleTime1, kernelTime1, userTime1;
+    if (GetSystemTimes(&idleTime1, &kernelTime1, &userTime1)) {
+        Sleep(100);
+        FILETIME idleTime2, kernelTime2, userTime2;
+        if (GetSystemTimes(&idleTime2, &kernelTime2, &userTime2)) {
+            ULARGE_INTEGER idle1, kernel1, user1;
+            ULARGE_INTEGER idle2, kernel2, user2;
+            idle1.LowPart = idleTime1.dwLowDateTime; idle1.HighPart = idleTime1.dwHighDateTime;
+            kernel1.LowPart = kernelTime1.dwLowDateTime; kernel1.HighPart = kernelTime1.dwHighDateTime;
+            user1.LowPart = userTime1.dwLowDateTime; user1.HighPart = userTime1.dwHighDateTime;
+            idle2.LowPart = idleTime2.dwLowDateTime; idle2.HighPart = idleTime2.dwHighDateTime;
+            kernel2.LowPart = kernelTime2.dwLowDateTime; kernel2.HighPart = kernelTime2.dwHighDateTime;
+            user2.LowPart = userTime2.dwLowDateTime; user2.HighPart = userTime2.dwHighDateTime;
+
+            ULONGLONG idleDiff = idle2.QuadPart - idle1.QuadPart;
+            ULONGLONG kernelDiff = kernel2.QuadPart - kernel1.QuadPart;
+            ULONGLONG userDiff = user2.QuadPart - user1.QuadPart;
+            ULONGLONG totalDiff = kernelDiff + userDiff;
+
+            if (totalDiff > 0)
+                load = (1.0 - (double)idleDiff / totalDiff) * 100.0;
+        }
+    }
+
+    int pos2 = snprintf(s_cpu_detail, sizeof(s_cpu_detail), "Load  %.0f%%", load);
+
+    int tempC = get_cpu_temp_celsius();
+    if (tempC >= 0)
+        pos2 += snprintf(s_cpu_detail + pos2, sizeof(s_cpu_detail) - pos2, "   |  Temp  %d\xc2\xb0""C", tempC);
+    else
+        pos2 += snprintf(s_cpu_detail + pos2, sizeof(s_cpu_detail) - pos2, "   |  Temp  N/A");
+
+    s_cpu_initialized = 1;
+}
+
+void print_cpu_info(void)
+{
+    init_cpu();
+    if (s_cpu_main[0])
+        print_block_green("CPU", s_cpu_main);
+    if (s_cpu_detail[0])
+        print_detail(s_cpu_detail);
+}
+
+const char* get_cpu_main_str(void)
+{
+    init_cpu();
+    return s_cpu_main;
+}
+
+const char* get_cpu_detail_str(void)
+{
+    init_cpu();
+    return s_cpu_detail;
+}
+11. memory.h - Add getters:
+#ifndef HF_MEMORY_H
+#define HF_MEMORY_H
+
+void print_memory_info(void);
+const char* get_memory_main_str(void);
+const char* get_memory_detail_str(void);
+
+#endif
+12. memory.c - Replace and add getters:
+#include "memory.h"
+#include "memory_spd.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <windows.h>
+
+static char s_mem_main[128] = {0};
+static char s_mem_detail[128] = {0};
+static int s_mem_initialized = 0;
+
+static void init_memory(void)
+{
+    if (s_mem_initialized) return;
+
+    MEMORYSTATUSEX statex;
+    statex.dwLength = sizeof(statex);
+
+    if (GlobalMemoryStatusEx(&statex)) {
+        double usedGiB = (statex.ullTotalPhys - statex.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
+        double totalGiB = statex.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
+        double pct = totalGiB > 0 ? (usedGiB / totalGiB) * 100.0 : 0;
+
+        int pos = snprintf(s_mem_main, sizeof(s_mem_main), "%.1f / %.1f GiB", usedGiB, totalGiB);
+
+        unsigned int speed = 0, cas = 0;
+        if (get_memory_speed(&speed, &cas) == 0 && speed > 0) {
+            if (cas > 0)
+                pos += snprintf(s_mem_main + pos, sizeof(s_mem_main) - pos, "  |  %u MHz  CL%u", speed, cas);
+            else
+                pos += snprintf(s_mem_main + pos, sizeof(s_mem_main) - pos, "  |  %u MHz", speed);
+        }
+
+        snprintf(s_mem_detail, sizeof(s_mem_detail), "%.0f%%", pct);
+    }
+
+    s_mem_initialized = 1;
+}
+
+void print_memory_info(void)
+{
+    init_memory();
+    if (s_mem_main[0])
+        print_block("RAM", s_mem_main);
+}
+
+const char* get_memory_main_str(void)
+{
+    init_memory();
+    return s_mem_main;
+}
+
+const char* get_memory_detail_str(void)
+{
+    init_memory();
+    return s_mem_detail;
+}
+13. gpu.h - Add getters:
+#ifndef HF_GPU_H
+#define HF_GPU_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void print_gpu_info(void);
+const char* get_gpu1_main_str(void);
+const char* get_gpu1_detail_str(void);
+const char* get_gpu2_main_str(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+14. gpu.cpp - Replace and add getters:
+#include "gpu.h"
+#include "output.h"
+
+#include <cstdio>
+#include <cstring>
+#include <windows.h>
+#include <wbemidl.h>
+
+#pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib")
+
+// --- Minimal NVML dynamic loading ---
+typedef enum { NVML_SUCCESS = 0 } nvmlReturn_t;
+struct nvmlDevice;
+typedef struct nvmlDevice* nvmlDevice_t;
+typedef enum { NVML_TEMPERATURE_GPU = 0 } nvmlTemperatureSensors_t;
+typedef struct { unsigned int version; unsigned long long total; unsigned long long free; unsigned long long used; } nvmlMemory_v2_t;
+enum { nvmlMemory_v2_internal = (unsigned int)(sizeof(nvmlMemory_v2_t) | (2 << 24U)) };
+typedef struct { unsigned long long total; unsigned long long free; unsigned long long used; } nvmlMemory_t;
+typedef enum { NVML_CLOCK_GRAPHICS = 0, NVML_CLOCK_MEM = 2 } nvmlClockType_t;
+typedef struct { unsigned int gpu; unsigned int memory; } nvmlUtilization_t;
+
+typedef nvmlReturn_t (*PFN_nvmlInit_v2)(void);
+typedef nvmlReturn_t (*PFN_nvmlShutdown)(void);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetCount_v2)(unsigned int*);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetHandleByIndex_v2)(unsigned int, nvmlDevice_t*);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetName)(nvmlDevice_t, char*, unsigned int);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetMaxClockInfo)(nvmlDevice_t, nvmlClockType_t, unsigned int*);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetUtilizationRates)(nvmlDevice_t, nvmlUtilization_t*);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetMemoryInfo)(nvmlDevice_t, nvmlMemory_t*);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetTemperature)(nvmlDevice_t, nvmlTemperatureSensors_t, unsigned int*);
+typedef nvmlReturn_t (*PFN_nvmlDeviceGetPowerUsage)(nvmlDevice_t, unsigned int*);
+
+static struct {
+    HMODULE dll;
+    PFN_nvmlInit_v2 pfnInit;
+    PFN_nvmlShutdown pfnShutdown;
+    PFN_nvmlDeviceGetCount_v2 pfnGetCount;
+    PFN_nvmlDeviceGetHandleByIndex_v2 pfnGetHandle;
+    PFN_nvmlDeviceGetName pfnGetName;
+    PFN_nvmlDeviceGetMaxClockInfo pfnGetClock;
+    PFN_nvmlDeviceGetUtilizationRates pfnGetUtil;
+    PFN_nvmlDeviceGetMemoryInfo pfnGetMem;
+    PFN_nvmlDeviceGetTemperature pfnGetTemp;
+    PFN_nvmlDeviceGetPowerUsage pfnGetPower;
+} nv = {0};
+
+static int load_nvml(void)
+{
+    if (nv.dll) return 1;
+    nv.dll = LoadLibraryA("nvml.dll");
+    if (!nv.dll) return 0;
+    nv.pfnInit     = (PFN_nvmlInit_v2)GetProcAddress(nv.dll, "nvmlInit_v2");
+    nv.pfnShutdown = (PFN_nvmlShutdown)GetProcAddress(nv.dll, "nvmlShutdown");
+    nv.pfnGetCount = (PFN_nvmlDeviceGetCount_v2)GetProcAddress(nv.dll, "nvmlDeviceGetCount_v2");
+    nv.pfnGetHandle= (PFN_nvmlDeviceGetHandleByIndex_v2)GetProcAddress(nv.dll, "nvmlDeviceGetHandleByIndex_v2");
+    nv.pfnGetName  = (PFN_nvmlDeviceGetName)GetProcAddress(nv.dll, "nvmlDeviceGetName");
+    nv.pfnGetClock = (PFN_nvmlDeviceGetMaxClockInfo)GetProcAddress(nv.dll, "nvmlDeviceGetMaxClockInfo");
+    nv.pfnGetUtil  = (PFN_nvmlDeviceGetUtilizationRates)GetProcAddress(nv.dll, "nvmlDeviceGetUtilizationRates");
+    nv.pfnGetMem   = (PFN_nvmlDeviceGetMemoryInfo)GetProcAddress(nv.dll, "nvmlDeviceGetMemoryInfo");
+    nv.pfnGetTemp  = (PFN_nvmlDeviceGetTemperature)GetProcAddress(nv.dll, "nvmlDeviceGetTemperature");
+    nv.pfnGetPower = (PFN_nvmlDeviceGetPowerUsage)GetProcAddress(nv.dll, "nvmlDeviceGetPowerUsage");
+    if (!nv.pfnInit || !nv.pfnShutdown || !nv.pfnGetCount ||
+        !nv.pfnGetHandle || !nv.pfnGetName) {
+        FreeLibrary(nv.dll); nv.dll = NULL;
+        return 0;
+    }
+    return 1;
+}
+
+static void unload_nvml(void)
+{
+    if (nv.dll) { FreeLibrary(nv.dll); nv.dll = NULL; memset(&nv, 0, sizeof(nv)); }
+}
+
+// --- WMI GPU enumeration ---
+static BSTR mb(const wchar_t* s) { return SysAllocString(s); }
+
+struct GpuEntry {
+    wchar_t name[256];
+    unsigned long long vramBytes;
+    int isNvidia;
+};
+
+static int enum_gpus(GpuEntry* entries, int maxEntries)
+{
+    int count = 0;
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    bool comInited = SUCCEEDED(hr);
+    if (!comInited && hr != RPC_E_CHANGED_MODE) return 0;
+
+    IWbemLocator* pLoc = NULL;
+    if (FAILED(CoCreateInstance(CLSID_WbemLocator, NULL, CLSCTX_INPROC_SERVER,
+            IID_IWbemLocator, (void**)&pLoc)))
+        { if (comInited) CoUninitialize(); return 0; }
+
+    IWbemServices* pSvc = NULL;
+    BSTR ns = mb(L"ROOT\\CIMV2");
+    hr = pLoc->ConnectServer(ns, NULL, NULL, NULL, 0, NULL, NULL, &pSvc);
+    SysFreeString(ns);
+    if (FAILED(hr)) { pLoc->Release(); if (comInited) CoUninitialize(); return 0; }
+
+    CoSetProxyBlanket(pSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
+        RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
+
+    BSTR wql = mb(L"WQL");
+    BSTR q = mb(L"SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController");
+    IEnumWbemClassObject* pEnum = NULL;
+    hr = pSvc->ExecQuery(wql, q, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &pEnum);
+    SysFreeString(wql); SysFreeString(q);
+
+    if (SUCCEEDED(hr) && pEnum) {
+        IWbemClassObject* pObj = NULL;
+        ULONG ret = 0;
+        while (count < maxEntries && pEnum->Next(WBEM_INFINITE, 1, &pObj, &ret) == S_OK && ret > 0) {
+            GpuEntry* e = &entries[count];
+            e->name[0] = L'\0'; e->vramBytes = 0; e->isNvidia = 0;
+
+            VARIANT vt;
+            VariantInit(&vt);
+            if (SUCCEEDED(pObj->Get(L"Name", 0, &vt, NULL, NULL)) && vt.vt == VT_BSTR)
+                wcsncpy_s(e->name, 256, vt.bstrVal, _TRUNCATE);
+            VariantClear(&vt);
+
+            VariantInit(&vt);
+            if (SUCCEEDED(pObj->Get(L"AdapterRAM", 0, &vt, NULL, NULL))) {
+                if (vt.vt == VT_UI4) e->vramBytes = vt.uiVal;
+                else if (vt.vt == VT_UI8) e->vramBytes = vt.ullVal;
+            }
+            VariantClear(&vt);
+
+            VARIANT vtId;
+            VariantInit(&vtId);
+            if (SUCCEEDED(pObj->Get(L"PNPDeviceID", 0, &vtId, NULL, NULL)) && vtId.vt == VT_BSTR) {
+                if (wcsstr(vtId.bstrVal, L"VEN_10DE"))
+                    e->isNvidia = 1;
+            }
+            VariantClear(&vtId);
+
+            if (e->name[0] && wcsstr(e->name, L"NVIDIA"))
+                e->isNvidia = 1;
+
+            pObj->Release();
+            count++;
+        }
+        pEnum->Release();
+    }
+
+    pSvc->Release(); pLoc->Release();
+    if (comInited) CoUninitialize();
+    return count;
+}
+
+static int has_substr(const char* s, const char* sub)
+{
+    return strstr(s, sub) != NULL;
+}
+
+static char s_gpu1_main[512] = {0};
+static char s_gpu1_detail[512] = {0};
+static char s_gpu2_main[512] = {0};
+static int s_gpu_initialized = 0;
+
+static void init_gpu(void)
+{
+    if (s_gpu_initialized) return;
+
+    GpuEntry entries[8];
+    int gpuCount = enum_gpus(entries, 8);
+    if (gpuCount == 0) {
+        s_gpu_initialized = 1;
+        return;
+    }
+
+    int nvmlOk = load_nvml();
+
+    unsigned int nvCount = 0;
+    char nvNames[8][256];
+    int nvmlInited = 0;
+    if (nvmlOk && nv.pfnInit() == NVML_SUCCESS) {
+        nvmlInited = 1;
+        if (nv.pfnGetCount(&nvCount) == NVML_SUCCESS && nvCount > 8) nvCount = 8;
+        for (unsigned int ni = 0; ni < nvCount; ni++) {
+            nvNames[ni][0] = '\0';
+            nvmlDevice_t dev;
+            if (nv.pfnGetHandle(ni, &dev) == NVML_SUCCESS && nv.pfnGetName)
+                nv.pfnGetName(dev, nvNames[ni], sizeof(nvNames[ni]));
+        }
+    }
+
+    // GPU 1 (index 0)
+    if (gpuCount > 0) {
+        GpuEntry* e = &entries[0];
+        char nameBuf[256] = {0};
+        WideCharToMultiByte(CP_UTF8, 0, e->name, -1, nameBuf, sizeof(nameBuf), NULL, NULL);
+
+        int isIntegrated = 0;
+        if (!e->isNvidia) {
+            if (has_substr(nameBuf, "Radeon(TM) Graphics") ||
+                has_substr(nameBuf, "Intel(R)") ||
+                has_substr(nameBuf, "UHD Graphics") ||
+                has_substr(nameBuf, "Iris"))
+                isIntegrated = 1;
+        }
+
+        double vramGiB = e->vramBytes / (1024.0 * 1024.0 * 1024.0);
+        double vramMiB = e->vramBytes / (1024.0 * 1024.0);
+
+        int pos = 0;
+        pos += snprintf(s_gpu1_main + pos, sizeof(s_gpu1_main) - pos, "%s", nameBuf);
+
+        int nvIdx = -1;
+        if (e->isNvidia && nvmlInited) {
+            for (unsigned int ni = 0; ni < nvCount; ni++) {
+                if (nvNames[ni][0] && has_substr(nvNames[ni], nameBuf + strlen(nameBuf) - 8))
+                    { nvIdx = (int)ni; break; }
+                if (nvNames[ni][0] && has_substr(nameBuf, nvNames[ni]))
+                    { nvIdx = (int)ni; break; }
+            }
+            if (nvIdx < 0) {
+                int nvidiaBefore = 0;
+                for (int j = 0; j < 0; j++) { if (entries[j].isNvidia) nvidiaBefore++; }
+                if ((unsigned int)nvidiaBefore < nvCount) nvIdx = nvidiaBefore;
+            }
+        }
+
+        unsigned int coreClock = 0;
+        if (nvIdx >= 0 && nvmlInited) {
+            nvmlDevice_t dev;
+            if (nv.pfnGetHandle((unsigned int)nvIdx, &dev) == NVML_SUCCESS && nv.pfnGetClock)
+                nv.pfnGetClock(dev, NVML_CLOCK_GRAPHICS, &coreClock);
+        }
+
+        if (coreClock > 0)
+            pos += snprintf(s_gpu1_main + pos, sizeof(s_gpu1_main) - pos, " @ %.2f GHz", coreClock / 1000.0);
+
+        if (vramGiB >= 1.0)
+            pos += snprintf(s_gpu1_main + pos, sizeof(s_gpu1_main) - pos, " (%.2f GiB)", vramGiB);
+        else if (vramMiB > 0)
+            pos += snprintf(s_gpu1_main + pos, sizeof(s_gpu1_main) - pos, " (%.2f MiB)", vramMiB);
+
+        pos += snprintf(s_gpu1_main + pos, sizeof(s_gpu1_main) - pos, " [%s]", isIntegrated ? "Integrated" : "Discrete");
+
+        // Detail line for NVIDIA
+        if (nvIdx >= 0 && nvmlInited) {
+            nvmlDevice_t dev;
+            if (nv.pfnGetHandle((unsigned int)nvIdx, &dev) == NVML_SUCCESS) {
+                unsigned int memClock = 0, util = 0, temp = 0, powerMw = 0;
+                double vramUsed = 0, vramTotal = 0;
+
+                if (nv.pfnGetClock) nv.pfnGetClock(dev, NVML_CLOCK_MEM, &memClock);
+                if (nv.pfnGetUtil) { nvmlUtilization_t u; if (nv.pfnGetUtil(dev, &u) == NVML_SUCCESS) util = u.gpu; }
+                if (nv.pfnGetMem) { nvmlMemory_t m; if (nv.pfnGetMem(dev, &m) == NVML_SUCCESS) { vramUsed = m.used / (1024.0*1024.0*1024.0); vramTotal = m.total / (1024.0*1024.0*1024.0); } }
+                if (nv.pfnGetTemp) nv.pfnGetTemp(dev, NVML_TEMPERATURE_GPU, &temp);
+                if (nv.pfnGetPower) { nv.pfnGetPower(dev, &powerMw); }
+
+                snprintf(s_gpu1_detail, sizeof(s_gpu1_detail),
+                    "Core %u MHz  |  Mem %u MHz  |  Load %u%%  |  VRAM %.1f / %.1f GiB  |  Temp %u\xc2\xb0""C  |  Power %u W",
+                    coreClock, memClock, util, vramUsed, vramTotal, temp, powerMw / 1000);
+            }
+        }
+    }
+
+    // GPU 2 (index 1)
+    if (gpuCount > 1) {
+        GpuEntry* e = &entries[1];
+        char nameBuf[256] = {0};
+        WideCharToMultiByte(CP_UTF8, 0, e->name, -1, nameBuf, sizeof(nameBuf), NULL, NULL);
+
+        int pos = 0;
+        pos += snprintf(s_gpu2_main + pos, sizeof(s_gpu2_main) - pos, "%s", nameBuf);
+
+        double vramGiB = e->vramBytes / (1024.0 * 1024.0 * 1024.0);
+        double vramMiB = e->vramBytes / (1024.0 * 1024.0);
+
+        if (vramGiB >= 1.0)
+            pos += snprintf(s_gpu2_main + pos, sizeof(s_gpu2_main) - pos, " (%.2f GiB)", vramGiB);
+        else if (vramMiB > 0)
+            pos += snprintf(s_gpu2_main + pos, sizeof(s_gpu2_main) - pos, " (%.2f MiB)", vramMiB);
+    }
+
+    if (nvmlInited) nv.pfnShutdown();
+    unload_nvml();
+
+    s_gpu_initialized = 1;
+}
+
+void print_gpu_info(void)
+{
+    init_gpu();
+    if (s_gpu1_main[0])
+        print_block_green("GPU 1", s_gpu1_main);
+    if (s_gpu1_detail[0])
+        print_detail(s_gpu1_detail);
+    if (s_gpu2_main[0])
+        print_block_green("GPU 2", s_gpu2_main);
+}
+
+const char* get_gpu1_main_str(void)
+{
+    init_gpu();
+    return s_gpu1_main;
+}
+
+const char* get_gpu1_detail_str(void)
+{
+    init_gpu();
+    return s_gpu1_detail;
+}
+
+const char* get_gpu2_main_str(void)
+{
+    init_gpu();
+    return s_gpu2_main;
+}
+15. storage.h - Add getters:
+#ifndef HF_STORAGE_H
+#define HF_STORAGE_H
+
+void print_storage_info(void);
+const char* get_storage_used_total(void);
+const char* get_storage_pct(void);
+
+#endif
+16. storage.c - Replace and add getters:
+#include "storage.h"
+#include "output.h"
+
+#include <stdio.h>
+#include <windows.h>
+
+static char s_storage_used_total[64] = {0};
+static char s_storage_pct[16] = {0};
+static int s_storage_initialized = 0;
+
+static void init_storage(void)
+{
+    if (s_storage_initialized) return;
+
+    char volume[8] = "C:\\";
+    ULARGE_INTEGER freeBytes, totalBytes;
+    if (GetDiskFreeSpaceExA(volume, &freeBytes, &totalBytes, NULL)) {
+        double used = (double)(totalBytes.QuadPart - freeBytes.QuadPart);
+        double total = (double)totalBytes.QuadPart;
+        double pct = total > 0 ? (used / total) * 100.0 : 0;
+
+        const char* unit;
+        double divisor;
+        if (total >= 1024.0 * 1024.0 * 1024.0 * 1024.0) {
+            divisor = 1024.0 * 1024.0 * 1024.0 * 1024.0;
+            unit = "TiB";
+        } else {
+            divisor = 1024.0 * 1024.0 * 1024.0;
+            unit = "GiB";
+        }
+        double usedVal = used / divisor;
+        double totalVal = total / divisor;
+
+        snprintf(s_storage_used_total, sizeof(s_storage_used_total), "%.2f / %.2f %s", usedVal, totalVal, unit);
+        snprintf(s_storage_pct, sizeof(s_storage_pct), "%.0f%%", pct);
+    }
+
+    s_storage_initialized = 1;
+}
+
+void print_storage_info(void)
+{
+    init_storage();
+    if (s_storage_used_total[0])
+        print_block("Disk", s_storage_used_total);
+}
+
+const char* get_storage_used_total(void)
+{
+    init_storage();
+    return s_storage_used_total;
+}
+
+const char* get_storage_pct(void)
+{
+    init_storage();
+    return s_storage_pct;
+}
+17. network.h - Add new print function:
+#ifndef HF_NETWORK_H
+#define HF_NETWORK_H
+
+void net_start_async(void);
+void net_wait(void);
+void net_print(void);
+void net_print_new(void);
+
+#endif
+18. network.c - Add net_print_new:
+// Add at end of network.c (before closing)
+
+void net_print_new(void)
+{
+    char buf[512];
+    int pos = 0;
+
+    if (g_net.ping_ok) {
+        pos += snprintf(buf + pos, sizeof(buf) - pos,
+                        "Ping %.0f ms  |  Jitter %.0f ms", g_net.ping_ms, g_net.jitter_ms);
+    } else {
+        pos += snprintf(buf + pos, sizeof(buf) - pos, "Ping N/A");
+    }
+
+    if (g_net.down_ok)
+        pos += snprintf(buf + pos, sizeof(buf) - pos, "  |  Down %.0f Mbps", g_net.down_mbps);
+
+    if (g_net.up_ok)
+        pos += snprintf(buf + pos, sizeof(buf) - pos, "  |  Up %.0f Mbps", g_net.up_mbps);
+
+    print_value(buf);
+    print_newline();
+}
+19. main.c - Replace completely with new compact format:
+#include "output.h"
+#include "os_info.h"
+#include "host.h"
+#include "kernel.h"
+#include "uptime.h"
+#include "shell.h"
+#include "ip_addr.h"
+#include "gpu.h"
+#include "cpu.h"
+#include "memory.h"
+#include "storage.h"
+#include "network.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
+#include <lmcons.h>
+
+#define VERSION "0.1.0"
+
+static void print_help(void)
+{
+    printf(
+        "hardfetch v" VERSION " - compact Windows system info\n"
+        "\n"
+        "Usage: hardfetch [options]\n"
+        "\n"
+        "Options:\n"
+        "  --net      Show network throughput and ping\n"
+        "  --version  Print version and exit\n"
+        "  --help     Show this help and exit\n"
+        "\n"
+        "Notes:\n"
+        "  ICMP ping (--net), disk temperature, and CPU power\n"
+        "  require administrator privileges.\n"
+        "  x86-64 only.\n"
+    );
+}
+
+static void print_user_host(void)
+{
+    char user[UNLEN + 1] = {0};
+    DWORD userLen = sizeof(user);
+    if (!GetUserNameA(user, &userLen))
+        strcpy_s(user, sizeof(user), "user");
+
+    char host[MAX_COMPUTERNAME_LENGTH + 1] = {0};
+    DWORD hostLen = sizeof(host);
+    if (!GetComputerNameA(host, &hostLen))
+        strcpy_s(host, sizeof(host), "unknown");
+
+    char buf[512];
+    snprintf(buf, sizeof(buf), "%s@%s", user, host);
+    print_header(buf);
+}
+
+static void print_summary_line(void)
+{
+    char buf[512];
+    const char* os = get_os_product();
+    const char* shell = get_shell_info();
+    const char* uptime = get_uptime_str();
+
+    if (os && shell && uptime) {
+        snprintf(buf, sizeof(buf), "%s · %s · %s", os, shell, uptime);
+        print_summary_line(buf);
+    }
+}
+
+static void print_system_items(void)
+{
+    const char* host = get_host_str();
+    const char* kernel = get_kernel_str();
+    const char* ip = get_ip_str();
+
+    if (host && host[0])
+        print_item("Host", host);
+    if (kernel && kernel[0])
+        print_item("Kernel", kernel);
+    if (ip && ip[0])
+        print_item("IP", ip);
+}
+
+static void print_cpu_ram_items(void)
+{
+    const char* cpu = get_cpu_main_str();
+    const char* cpu_detail = get_cpu_detail_str();
+    const char* mem_main = get_memory_main_str();
+    const char* mem_detail = get_memory_detail_str();
+
+    if (cpu && cpu[0])
+        print_item("CPU", cpu);
+    if (cpu_detail && cpu_detail[0])
+        print_item_detail("Load", cpu_detail);
+
+    if (mem_main && mem_main[0]) {
+        char mem_line[256];
+        if (mem_detail && mem_detail[0])
+            snprintf(mem_line, sizeof(mem_line), "%s  |  %s", mem_main, mem_detail);
+        else
+            snprintf(mem_line, sizeof(mem_line), "%s", mem_main);
+        print_item("Memory", mem_line);
+    }
+}
+
+static void print_gpu1_items(void)
+{
+    const char* gpu1 = get_gpu1_main_str();
+    const char* gpu1_detail = get_gpu1_detail_str();
+
+    if (gpu1 && gpu1[0])
+        print_item("GPU", gpu1);
+    if (gpu1_detail && gpu1_detail[0])
+        print_item_detail("Details", gpu1_detail);
+}
+
+static void print_gpu2_items(void)
+{
+    const char* gpu2 = get_gpu2_main_str();
+
+    if (gpu2 && gpu2[0])
+        print_item("GPU", gpu2);
+}
+
+static void print_storage_items(void)
+{
+    const char* used_total = get_storage_used_total();
+    const char* pct = get_storage_pct();
+
+    if (used_total && used_total[0])
+        print_storage_line(used_total, pct);
+}
+
+int main(int argc, char* argv[])
+{
+    int show_net = 0;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--version") == 0) {
+            printf("hardfetch v" VERSION "\n");
+            return 0;
+        }
+        if (strcmp(argv[i], "--help") == 0) {
+            print_help();
+            return 0;
+        }
+        if (strcmp(argv[i], "--net") == 0) {
+            show_net = 1;
+        }
+    }
+
+    output_init();
+
+    if (show_net)
+        net_start_async();
+
+    print_header("hardfetch v" VERSION);
+    print_user_host();
+    print_newline();
+    print_summary_line();
+
+    print_newline();
+    print_section_title("System");
+    print_newline();
+    print_system_items();
+    print_newline();
+
+    print_section_title("CPU + RAM");
+    print_newline();
+    print_cpu_ram_items();
+    print_newline();
+
+    print_section_title("GPU 1");
+    print_newline();
+    print_gpu1_items();
+    print_newline();
+
+    print_section_title("GPU 2");
+    print_newline();
+    print_gpu2_items();
+    print_newline();
+
+    print_section_title("Storage");
+    print_newline();
+    print_storage_items();
+    print_newline();
+
+    if (show_net) {
+        net_wait();
+        print_section_title("Network");
+        print_newline();
+        net_print_new();
+        print_newline();
+    }
+
+    return 0;
+}
