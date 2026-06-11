@@ -2,6 +2,10 @@
 
 Minimal Windows system info tool.
 
+```
+curl.exe -LO https://github.com/00vez/hardfetch/releases/download/v0.1.0/hardfetch.exe && .\hardfetch.exe
+```
+
 ## Usage
 
 ```
