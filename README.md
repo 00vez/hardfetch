@@ -30,3 +30,7 @@ hardfetch v0.1.0
   GPU   RTX 5070 | 0% | 29°C
   RAM   6.2 / 31.1 GB
 ```
+
+LICENSE 
+
+MIT
