@@ -1,3 +1,7 @@
 build/
+build-*/
+build-silicon/
 build-wsl/
 *.swp
+smc-mba-m4.txt
+smc-*.txt
