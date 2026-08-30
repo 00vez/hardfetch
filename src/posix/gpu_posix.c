@@ -6,6 +6,11 @@
 #include <string.h>
 #include <stdlib.h>
 #if defined(__APPLE__)
+#if defined(__APPLE__)
+typedef unsigned int u_int;
+typedef unsigned char u_char;
+typedef unsigned short u_short;
+#endif
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <CoreFoundation/CoreFoundation.h>
