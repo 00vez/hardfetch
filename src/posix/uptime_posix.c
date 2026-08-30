@@ -39,8 +39,8 @@ void print_uptime_info(void)
 
     char buf[96];
     if (days > 0)
-        snprintf(buf, sizeof(buf), "%ld days, %ld hours, %ld mins", days, hrs, mins);
-    else
-        snprintf(buf, sizeof(buf), "%ld hours, %ld mins", hrs, mins);
+        snprintf(buf, sizeof(buf), "%ld day%s, %ld hour%s, %ld min%s", days, (days==1)?"":"s", hrs, (hrs==1)?"":"s", mins, (mins==1)?"":"s");
+    else if (hrs > 0)
+        snprintf(buf, sizeof(buf), "%ld hour%s, %ld min%s", hrs, (hrs==1)?"":"s", mins, (mins==1)?"":"s");
     print_block("Uptime", buf);
 }
