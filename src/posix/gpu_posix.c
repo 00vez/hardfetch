@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
+#endif
+
 #include <dlfcn.h>
 #include <dirent.h>
 #include <ctype.h>
@@ -75,6 +80,19 @@ static int load_nvml(void)
     }
     return 1;
 }
+
+#if defined(__APPLE__)
+static void print_apple_gpu(void)
+{
+    char model[256] = {0};
+    size_t len = sizeof(model);
+    if (sysctlbyname("hw.model", model, &len, NULL, 0) == 0) {
+        printf("Apple %s (Integrated)\n", model);
+    } else {
+        printf("Apple GPU (Unknown)\n");
+    }
+}
+#endif
 
 static void print_nvidia_gpus(void)
 {
@@ -193,6 +211,10 @@ static void print_drm_gpus(void)
 
 void print_gpu_info(void)
 {
+#if defined(__APPLE__)
+    print_apple_gpu();
+    return;
+#endif
     print_nvidia_gpus();
     print_drm_gpus();
     if (g_idx == 0) print_block("GPU", "N/A");

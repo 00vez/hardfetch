@@ -8,6 +8,11 @@
 #include <stdlib.h>
 #include <time.h>
 
+#if defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
 static void trim(char* s)
 {
     size_t n = strlen(s);
@@ -59,6 +64,21 @@ void print_cpu_info(void)
     double mhz = 0;
     int logical = 0;
 
+#if defined(__APPLE__)
+    {
+        char brand[256] = {0};
+        size_t len = sizeof(brand);
+        if (sysctlbyname("machdep.cpu.brand_string", brand, &len, NULL, 0) == 0) {
+            strncpy(name, brand, sizeof(name)-1); name[sizeof(name)-1]='\0';
+            got_name = 1;
+        }
+        int ncpu = 0;
+        len = sizeof(ncpu);
+        sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0);
+        logical = ncpu;
+        mhz = 0; // braucht powermetrics / sysctl nicht direct; Best-Effort
+    }
+#else
     FILE* f = fopen("/proc/cpuinfo", "r");
     if (f) {
         char line[512];
@@ -72,6 +92,7 @@ void print_cpu_info(void)
         }
         fclose(f);
     }
+#endif
 
     char* suffix = strstr(name, "-Core");
     if (suffix) {
