@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(hardfetch
-    VERSION 0.2.2
+    VERSION 0.2.3
     LANGUAGES C CXX
     DESCRIPTION "Compact system info tool"
 )
