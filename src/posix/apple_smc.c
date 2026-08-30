@@ -30,7 +30,6 @@ typedef struct {
   UInt32     key;
   UInt8      vers[2];
   UInt8      plimit[16];
-  UInt8      padding[10];
   SmcKeyInfo keyInfo;
   UInt8      result;
   UInt8      status;
