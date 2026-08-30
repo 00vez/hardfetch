@@ -26,7 +26,7 @@
 #endif
 #endif
 
-#define VERSION "0.2.1"
+#define VERSION "0.2.2"
 
 static void print_help(void)
 {
