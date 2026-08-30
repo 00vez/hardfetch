@@ -28,8 +28,11 @@ void print_host_info(void)
         read_trim("/sys/class/dmi/id/board_name", name, sizeof(name));
     if (!name[0]) {
         char host[256] = {0};
-        if (gethostname(host, sizeof(host) - 1) == 0)
+        if (gethostname(host, sizeof(host) - 1) == 0) {
+            char* dot = strchr(host, '.');
+            if (dot) *dot = '\0';
             snprintf(name, sizeof(name), "%s", host);
+        }
     }
     print_block("Host", name[0] ? name : "N/A");
 }

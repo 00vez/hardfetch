@@ -97,9 +97,11 @@ static void print_apple_gpu(void)
     char* suf = strstr(brand, "-Core");
     if (suf) *suf = '\0';
     uint32_t f = appleMaxFreqMHz("voltage-states9-sram");
-    printf("%s", brand[0] ? brand : "Apple M4");
-    if (f > 0) printf(" @ %.2f GHz", f / 1000.0);
-    printf(" [Integrated]\n");
+    char val[256];
+    snprintf(val, sizeof(val), "%s", brand[0] ? brand : "Apple M4");
+    if (f > 0) snprintf(val + strlen(val), sizeof(val) - strlen(val), " @ %.2f GHz", f / 1000.0);
+    snprintf(val + strlen(val), sizeof(val) - strlen(val), " [Integrated]");
+    print_block("GPU", val);
 }
 #endif
 

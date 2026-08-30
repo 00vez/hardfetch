@@ -15,13 +15,6 @@ typedef unsigned short u_short;
 #include <mach/mach.h>
 #endif
 
-static unsigned long kb_from_line(const char* line)
-{
-    while (*line && (*line < '0' || *line > '9')) line++;
-    if (!*line) return 0;
-    return strtoul(line, NULL, 10);
-}
-
 void print_memory_info(void)
 {
     double totalGiB = 0, usedGiB = 0;
@@ -38,7 +31,7 @@ void print_memory_info(void)
         mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
         if (host_statistics64(host, HOST_VM_INFO64,
                               (host_info64_t)&vs, &count) == KERN_SUCCESS) {
-            uint64_t page_size = 0;
+            vm_size_t page_size = 0;
             host_page_size(host, &page_size);
             uint64_t freeb  = vs.free_count * page_size;
             uint64_t inact  = vs.inactive_count * page_size;

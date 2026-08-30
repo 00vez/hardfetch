@@ -78,11 +78,16 @@ void print_os_info(void)
 
     char buf[512];
     const char* prod = s_product[0] ? s_product : u.sysname;
-    const char* rel  = s_build[0] ? s_build : u.release;
+    const char* arch = u.machine[0] ? u.machine : "";
+#if defined(__APPLE__)
+    snprintf(buf, sizeof(buf), "%s (%s)", prod, arch);
+#else
+    const char* rel = s_build[0] ? s_build : u.release;
     if (arch[0])
         snprintf(buf, sizeof(buf), "%s %s  |  %s", prod, rel, arch);
     else
         snprintf(buf, sizeof(buf), "%s %s", prod, rel);
+#endif
     print_block("OS", buf);
 }
 
