@@ -33,7 +33,7 @@ void print_memory_info(void)
     if (sysctl(mib, 2, &phys, &len, NULL, 0) == 0) {
         totalGiB = phys / (1024.0 * 1024.0 * 1024.0);
 
-        mach_host_t host = mach_host_self();
+        mach_port_t host = mach_host_self();
         vm_statistics64_data_t vs;
         mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
         if (host_statistics64(host, HOST_VM_INFO64,
