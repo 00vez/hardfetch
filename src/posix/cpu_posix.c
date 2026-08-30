@@ -64,10 +64,6 @@ static double read_load(void)
     return load;
 }
 
-#if defined(__APPLE__)
-#include <IOKit/IOKitLib.h>
-#include <CoreFoundation/CoreFoundation.h>
-
 void print_cpu_info(void)
 {
     char name[256] = "Unknown CPU";
