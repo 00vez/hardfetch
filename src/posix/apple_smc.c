@@ -23,21 +23,19 @@ typedef struct {
   UInt32 dataSize;
   UInt32 dataType;
   UInt8  dataAttributes;
-} __attribute__((packed)) SmcKeyInfo;
+} SmcKeyInfo;
 
-#pragma pack(push, 1)
 typedef struct {
-  UInt32     key;
-  UInt8      vers[2];
-  UInt8      plimit[16];
+  UInt32   key;
+  UInt8    vers[6];
+  UInt8    plimit[16];
   SmcKeyInfo keyInfo;
-  UInt8      result;
-  UInt8      status;
-  UInt8      data8;
-  UInt32     data32;
-  UInt8      bytes[32];
+  UInt8    result;
+  UInt8    status;
+  UInt8    data8;
+  UInt32   data32;
+  UInt8    bytes[32];
 } SmcParam;
-#pragma pack(pop)
 
 static UInt32 fourcc(const char *s) {
   return ((UInt32)(UInt8)s[0] << 24) | ((UInt32)(UInt8)s[1] << 16) |
@@ -67,10 +65,12 @@ static bool smc_read(io_connect_t c, const char *key, SmcVal *out) {
   if (smc_call(c, &p) != KERN_SUCCESS || p.result != 0) return false;
   out->type = p.keyInfo.dataType;
   out->size = p.keyInfo.dataSize;
-  p.data8 = SMC_CMD_READ_KEY;
-  p.keyInfo.dataSize = out->size;
-  if (smc_call(c, &p) != KERN_SUCCESS || p.result != 0) return false;
-  memcpy(out->bytes, p.bytes, 32);
+  SmcParam q = {0};
+  q.key = fourcc(key);
+  q.data8 = SMC_CMD_READ_KEY;
+  q.keyInfo = p.keyInfo;
+  if (smc_call(c, &q) != KERN_SUCCESS || q.result != 0) return false;
+  memcpy(out->bytes, q.bytes, 32);
   return true;
 }
 
@@ -118,7 +118,7 @@ int apple_smc_cpu_temp(int *out_c) {
   for (UInt32 i = 0; i < count; i++) {
     SmcParam p = {0};
     p.data8 = SMC_CMD_KEY_BY_INDEX;
-    p.data32 = OSSwapHostToBigInt32(i);
+    p.data32 = i;
     if (smc_call(c, &p) != KERN_SUCCESS || p.result != 0) continue;
     char name[5] = {(char)(p.key >> 24), (char)(p.key >> 16), (char)(p.key >> 8), (char)p.key, 0};
     // prefix filter t/T
@@ -147,7 +147,7 @@ void apple_smc_dump(FILE *out) {
   for (UInt32 i = 0; i < count; i++) {
     SmcParam p = {0};
     p.data8 = SMC_CMD_KEY_BY_INDEX;
-    p.data32 = OSSwapHostToBigInt32(i);
+    p.data32 = i;
     if (smc_call(c, &p) != KERN_SUCCESS || p.result != 0) continue;
     char name[5] = {(char)(p.key >> 24), (char)(p.key >> 16), (char)(p.key >> 8), (char)p.key, 0};
     if (!smc_read(c, name, &v)) continue;
