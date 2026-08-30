@@ -9,8 +9,13 @@
 #include <time.h>
 
 #if defined(__APPLE__)
+#if defined(__APPLE__)
+typedef unsigned int u_int;
+typedef unsigned char u_char;
+typedef unsigned short u_short;
 #include <sys/types.h>
 #include <sys/sysctl.h>
+#endif
 #endif
 
 static void trim(char* s)
@@ -66,6 +71,7 @@ void print_cpu_info(void)
 
 #if defined(__APPLE__)
     {
+        int got_name = 0;
         char brand[256] = {0};
         size_t len = sizeof(brand);
         if (sysctlbyname("machdep.cpu.brand_string", brand, &len, NULL, 0) == 0) {
