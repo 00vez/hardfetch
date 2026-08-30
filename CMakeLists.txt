@@ -68,6 +68,7 @@ else()
         src/posix/memory_posix.c
         src/posix/memory_spd_posix.c
         src/posix/apple_pmgr.c
+        src/posix/apple_smc.c
         src/posix/storage_posix.c
         src/posix/ip_addr_posix.c
         src/posix/public_ip_posix.c
