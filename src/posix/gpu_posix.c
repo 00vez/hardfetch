@@ -6,6 +6,8 @@
 #include <string.h>
 #include <stdlib.h>
 #if defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #endif
