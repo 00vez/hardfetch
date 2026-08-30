@@ -119,7 +119,7 @@ void print_cpu_info(void)
     struct timespec ts = { 0, 20 * 1000 * 1000 };
     nanosleep(&ts, NULL);
     double s2 = read_load();
-    (void)s1;
+    (void)s1; /* loadavg via GetSystemTimes; 0% auf M4 bei kurzem Intervall erwartbar */
     double load = s2;
 
     char mainLine[320];
