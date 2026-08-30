@@ -9,10 +9,9 @@
 typedef unsigned int u_int;
 typedef unsigned char u_char;
 typedef unsigned short u_short;
-#include "apple_pmgr.h"
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#endif
+#include "apple_pmgr.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #endif
