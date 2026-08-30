@@ -20,6 +20,10 @@
 #else
 #include <unistd.h>
 #include <limits.h>
+#include <sys/param.h>
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX MAXHOSTNAMELEN
+#endif
 #endif
 
 #define VERSION "0.2.0"
