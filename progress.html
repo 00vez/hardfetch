@@ -206,6 +206,23 @@ th { border-bottom-color: #ddd; }
 <li>Kein Testframework; Verifikation über Flags und Ausgabe am gebauten Binary.</li>
 </ul>
 
+<h2>Protokoll vom 30.08.2026 (6. Session) - macOS Silicon Build-Fehler & Fixes</h2>
+<h3>Fehlerursachen (AppleClang 21.0.0 / macOS SDK)</h3>
+<ul>
+<li class="ok"><strong>CMakeLists.txt v0.1.0 Windows-only:</strong> <code>message(FATAL_ERROR "hardfetch requires Windows")</code> bei Zeile 10, <code>VERSION 0.1.0</code>. Fix: Dateiaustausch mit v0.2.0 POSIX-Branch (<code>else()</code> + <code>src/posix/*.c</code>).</li>
+<li class="ok"><strong><code>HOST_NAME_MAX</code> fehlend:</strong> AppleClang liefert es nicht über <code>&lt;limits.h&gt;</code>. Fix: <code>&lt;sys/param.h&gt;</code> + <code>#define HOST_NAME_MAX MAXHOSTNAMELEN</code> in <code>main.c</code>.</li>
+<li class="ok"><strong><code>u_int</code> / <code>u_char</code> / <code>u_short</code> unbekannt:</strong> <code>sys/sysctl.h</code> (macOS) erwartet sie, Header liefern nicht. Fix: Typedefs in <code>kernel_posix.c</code>, <code>uptime_posix.c</code>, <code>memory_posix.c</code>.</li>
+<li class="ok"><strong><code>mach_host_t</code> unbekannt:</strong> Apple SDK nutzt <code>mach_port_t</code>. Fix: Ersetzen in <code>memory_posix.c</code>.</li>
+<li class="ok"><strong><code>IFF_UP</code> / <code>IFF_LOOPBACK</code> nicht deklariert:</strong> <code>net/if.h</code> auf macOS unvollständig. Fix: Fallback-Defines in <code>ip_addr_posix.c</code>.</li>
+<li class="ok"><strong>Build-Verifikation:</strong> <code>cmake -B build-silicon -S .</code> + <code>cmake --build build-silicon</code> durchlaufen; Binary <code>build-silicon/hardfetch</code> erzeugt.</li>
+</ul>
+<h3>Vermeidung für Zukunft</h3>
+<ul>
+<li>Vor POSIX-Build immer <code>CMakeLists.txt</code>-Version prüfen (<code>VERSION 0.2.0</code>, <code>else()</code>-Zweig vorhanden).</li>
+<li>macOS-Defines (<code>HOST_NAME_MAX</code>, <code>u_int</code>-Familie) als ersten Schritt in POSIX-Dateien bereitstellen, nicht pro Fehler nachtragen.</li>
+<li>Wenn <code>sys/sysctl.h</code> verwendet wird: Typedefs immer vor dem Include einfügen (AppleClang 21).</li>
+</ul>
+
 <h2>Deployment und Betrieb</h2>
 <ul>
 <li>Lokal: <code>build\Release\hardfetch.exe</code>; Start über <code>hrf</code> oder direkten Pfad.</li>
