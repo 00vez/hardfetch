@@ -8,46 +8,67 @@
 #include "cpu.h"
 #include "memory.h"
 #include "storage.h"
-#include "network.h"
+#include "ip_addr.h"
+#include "public_ip.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
 #include <windows.h>
 #include <lmcons.h>
+#else
+#include <unistd.h>
+#include <limits.h>
+#endif
 
-#define VERSION "0.1.0"
+#define VERSION "0.2.0"
 
 static void print_help(void)
 {
     printf(
-        "hardfetch v" VERSION " - compact Windows system info\n"
+        "hardfetch v" VERSION " - compact system info\n"
         "\n"
         "Usage: hardfetch [options]\n"
         "\n"
         "Options:\n"
-        "  --net      Show network throughput and ping\n"
-        "  --version  Print version and exit\n"
-        "  --help     Show this help and exit\n"
+        "  -n, --net  Show network section (interfaces + public IP)\n"
+        "  -v, --version  Print version and exit\n"
+        "  -h, --help     Show this help and exit\n"
         "\n"
         "Notes:\n"
-        "  ICMP ping (--net), disk temperature, and CPU power\n"
-        "  require administrator privileges.\n"
+        "  Public IP lookup requires internet access.\n"
         "  x86-64 only.\n"
     );
 }
 
 static void print_user_host(void)
 {
-    char user[UNLEN + 1] = {0};
-    DWORD userLen = sizeof(user);
-    if (!GetUserNameA(user, &userLen))
-        strcpy_s(user, sizeof(user), "user");
-
-    char host[MAX_COMPUTERNAME_LENGTH + 1] = {0};
-    DWORD hostLen = sizeof(host);
-    if (!GetComputerNameA(host, &hostLen))
-        strcpy_s(host, sizeof(host), "unknown");
-
+    char user[128] = "user";
+    char host[256] = "unknown";
+#ifdef _WIN32
+    char u[UNLEN + 1] = {0};
+    DWORD ul = sizeof(u);
+    if (GetUserNameA(u, &ul)) {
+        strncpy_s(user, sizeof(user), u, _TRUNCATE);
+    }
+    char h[MAX_COMPUTERNAME_LENGTH + 1] = {0};
+    DWORD hl = sizeof(h);
+    if (GetComputerNameA(h, &hl)) {
+        strncpy_s(host, sizeof(host), h, _TRUNCATE);
+    }
+#else
+    const char* u = getenv("USER");
+    if (u && *u) {
+        strncpy(user, u, sizeof(user) - 1);
+        user[sizeof(user) - 1] = '\0';
+    }
+    char h[HOST_NAME_MAX + 1] = {0};
+    if (gethostname(h, sizeof(h) - 1) == 0) {
+        strncpy(host, h, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
+    }
+#endif
     char buf[512];
     snprintf(buf, sizeof(buf), "%s@%s", user, host);
     print_header(buf);
@@ -58,15 +79,15 @@ int main(int argc, char* argv[])
     int show_net = 0;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--version") == 0) {
+        if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             printf("hardfetch v" VERSION "\n");
             return 0;
         }
-        if (strcmp(argv[i], "--help") == 0) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_help();
             return 0;
         }
-        if (strcmp(argv[i], "--net") == 0) {
+        if (strcmp(argv[i], "--net") == 0 || strcmp(argv[i], "-n") == 0) {
             show_net = 1;
         }
     }
@@ -74,7 +95,7 @@ int main(int argc, char* argv[])
     output_init();
 
     if (show_net)
-        net_start_async();
+        public_ip_start();
 
     print_header("hardfetch v" VERSION);
     print_user_host();
@@ -98,8 +119,8 @@ int main(int argc, char* argv[])
     print_newline();
 
     if (show_net) {
-        net_wait();
-        net_print();
+        print_ip_info();
+        public_ip_print();
         print_newline();
     }
 

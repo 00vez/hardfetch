@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hardfetch – Protokoll &amp; Fortschritt</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; line-height: 1.5; }
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.05rem; margin-top: 1.8rem; border-bottom: 1px solid #ddd; padding-bottom: .2rem; }
+h3 { font-size: .95rem; margin-top: 1rem; color: #444; }
+li { margin: .2rem 0; }
+code { background: #f4f4f4; padding: .1rem .3rem; border-radius: 3px; font-size: .9em; }
+.ok::before { content: "✓ "; color: #1a7f37; }
+.todo::before { content: "→ "; color: #9a6700; }
+.warn::before { content: "⚠ "; color: #b35900; }
+.date { font-size: .9em; color: #666; margin-bottom: 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: .9em; }
+th, td { padding: .3rem; text-align: left; vertical-align: top; border-bottom: 1px solid #eee; }
+th { border-bottom-color: #ddd; }
+</style>
+</head>
+<body>
+<div class="date">Protokoll zuletzt aktualisiert: 30.08.2026 (5. Session)</div>
+<h1>hardfetch – Protokoll &amp; Fortschritt</h1>
+
+<h2>Projektziel</h2>
+<ul>
+<li>Windows-Konsolentool im Stil von <code>neofetch</code>: kompakte Systeminformationen (OS, Host, Kernel, Uptime, Shell, CPU, Speicher, GPU, Storage) in einem Durchlauf, ohne Logo/Rahmen.</li>
+<li>C11 für C-Dateien, C++17 nur für WMI/COM-Module; MSVC <code>/MT</code> (statisch), keine externen Laufzeit- oder Bibliotheksabhängigkeiten.</li>
+</ul>
+
+<h2>Kontext und Ausgangslage</h2>
+<ul>
+<li>Version <code>0.1.0</code>. Windows 11, Build 26200 (25H2). Einzelnes CMake-Target, flaches <code>src/</code>.</li>
+<li>Adminrechte nötig für: ICMP-Ping (<code>--net</code>), NVMe-Temp, CPU-Power, WMI-Thermalzonen (CPU-Temp). Netzwerksektion nur mit <code>--net</code>.</li>
+<li>Toolchain: <strong>VS 2022 BuildTools</strong> unter <code>C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools</code>; Generator Visual Studio 17 2022 (MSBuild), kein Ninja.</li>
+<li>Bekannte Einschränkungen (aus <code>AGENTS.md</code>): CPU zeigt Base (4.2 GHz) statt Boost (5.05 GHz) wegen PDH auf AMD Ryzen (CPPC); AMD-iGPU-VRAM 0 (WMI <code>AdapterRAM</code>); Temp N/A bei manchen Ryzen (k10temp nicht via WMI erreichbar).</li>
+<li><code>src/ip_addr.c</code> wird kompiliert, aber <code>print_ip_info()</code> wird nirgends aufgerufen (toter Code).</li>
+</ul>
+
+<h2>Architektur und Entscheidungen</h2>
+<ul>
+<li class="ok"><strong>Windows-spezifische Module:</strong> <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code> nutzen WMI/COM (C++); GPU zusätzlich NVIDIA via dynamischem NVML (<code>LoadLibraryA("nvml.dll")</code>). Kopfzeilen mit <code>extern "C"</code>.</li>
+<li class="ok"><strong>Build-Quirks:</strong> gemischtes Target mit <code>LINKER_LANGUAGE C</code>; leeres <code>CMAKE_CXX_IMPLICIT_LINK_LIBRARIES</code> gegen libstdc++.</li>
+<li class="warn"><strong>Geplanter Port macOS:</strong> Design steht, <strong>noch nicht umgesetzt</strong>. Geteilte POSIX-Schicht (<code>src/posix/</code>) für macOS und Linux/WSL2.</li>
+<li class="ok"><strong>WSL2/Linux-Port (Code):</strong> Plattformweiche in <code>CMakeLists.txt</code>, <code>src/main.c</code> + <code>src/output.c</code> portabel, 13 POSIX-Module (<code>src/posix/*.c</code>); <code>--net</code> repurposed (kein Admin mehr), Durchsatz/Ping entfernt. <strong>Build-Verifikation in WSL2 ausstehend.</strong></li>
+</ul>
+
+<h2>Akzeptanzkriterien</h2>
+<ul>
+<li class="ok">Kurzform <code>-h</code>/<code>-v</code> funktionieren wie <code>--help</code>/<code>--version</code> (verifiziert am gebauten Binary).</li>
+<li class="ok"><code>hrf</code> ist als Alias in der PowerShell-Profildatei verfügbar und ruft <code>hardfetch.exe</code> (verifiziert).</li>
+<li class="ok">Ausgabeverzögerung nach den ersten Sektionen analysiert und behoben: Gesamt-Wall-Zeit 0,51–0,68 s → <strong>0,22 s</strong> (per <code>Measure-Command</code>, 5 Läufe). Ursachen und Fixes siehe Protokoll Session 2.</li>
+<li class="ok">Netz-Sektion hinter <code>-n</code>/<code>--net</code> (statt immer): Standardlauf ohne Netz, mit Flag erscheinen Interfaces + öffentliche IP. Verifiziert am Build.</li>
+<li class="ok">Alter Durchsatz-/Ping-Abschnitt (<code>network.c</code> + ICMP) entfernt; <code>--net</code> repurposed für die neue Netz-Sektion (kein Admin mehr nötig).</li>
+<li class="warn">WSL2/Linux-Port: Code vollständig (<code>src/posix/*.c</code> + <code>CMakeLists</code>-Plattformweiche), aber <strong>nicht aus Build verifiziert</strong> (kein Linux-Compiler in dieser Umgebung). Erste WSL2-<code>cmake</code>-Build als Verifikationsschritt nötig.</li>
+<li class="ok">Toter Code <code>ip_addr.c</code> aufgelöst: <code>print_ip_info()</code> ist jetzt eingebunden und listet alle aktiven Interfaces (vorher: nur ein "bestes" Interface, nirgends aufgerufen).</li>
+<li class="ok">Farbschema einheitlich: bestehende ANSI-Codes (<code>\x1b[90m</code> grau, <code>\x1b[92m</code> grün, <code>\x1b[97m</code> weiß, <code>\x1b[1;90m</code> fett grau) sind plattformunabhängig; macOS/WSL2-Port übernimmt sie identisch. Kein Auto-Strip bei Pipe.</li>
+<li class="todo">macOS-Build mit denselben Sektionen wie Windows (Best-Effort, fehlende Werte als <code>N/A</code>).</li>
+</ul>
+
+<h2>Aktueller Status</h2>
+<ul>
+<li class="ok">Release-Build kompiliert fehlerfrei (MSVC, Exit-Code 0); <code>build\Release\hardfetch.exe</code> erzeugt.</li>
+<li class="ok"><code>-v</code>, <code>--version</code>, <code>-h</code>, <code>--help</code> liefern korrekte Ausgabe.</li>
+<li class="ok"><code>hrf</code>-Alias in <code>%USERPROFILE%\Documents\PowerShell\Microsoft.PowerShell_profile.ps1</code> gesetzt; verweist auf <code>C:\Users\v\Documents\lib\hardfetch\build\Release\hardfetch.exe</code>.</li>
+<li class="warn">Änderungen an <code>src/main.c</code> (portabel, <code>-n</code>-Flag, Gating), <code>src/output.c</code> (portabel), <code>src/cpu.c</code>, <code>src/cpu_temp.cpp</code>, <code>src/ip_addr.c</code>, <code>src/public_ip.c</code>, <code>CMakeLists.txt</code> (Plattformweiche Win/Linux), <code>src/posix/*.c</code> (13 neue POSIX-Module), <code>AGENTS.md</code>, <code>edits.txt</code> sind <strong>nicht committet</strong>. Entfernt: <code>src/network.c</code>, <code>src/network.h</code>.</li>
+</ul>
+
+<h2>Offen</h2>
+<ul>
+<li class="todo">macOS-Build mit denselben Sektionen wie Windows (Best-Effort, fehlende Werte als <code>N/A</code>).</li>
+<li class="todo">Ausstehende Änderungen committen (nach Nutzer-Freigabe).</li>
+</ul>
+
+<!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
+<h2>Protokoll vom 30.08.2026 (5. Session) — Version 0.2.0, WSL2 verifiziert</h2>
+<h3>Befund und Fixes</h3>
+<ul>
+<li class="ok"><strong>GPU in WSL2 war <code>N/A</code>:</strong> WSL2 exponiert kein <code>/sys/class/drm/card*</code> (nur <code>version</code>); GPU läuft über <code>/dev/dxg</code>-Paravirtualisierung. Per WSL-Probe bestätigt: <code>/usr/lib/wsl/lib/libnvidia-ml.so.1</code> (595.71.01) existiert. Fix: <code>src/posix/gpu_posix.c</code> lädt NVML dynamisch (<code>dlopen</code>, Pfad: WSL → x86_64 → libname) und liefert Name/Core/Mem/Load/VRAM/Temp/Power wie Windows; DRM bleibt Fallback für natives Linux (NVIDIA-Cards dort übersprungen). Dazu <code>dl</code> in Linux-Linkliste.</li>
+<li class="ok"><strong><code>Public  N/A</code> in WSL2:</strong> Rennbedingung — <code>main</code> kehrte zurück, während der detachte Fetch-Thread noch lief; Prozess-Exit killte ihn vor <code>g_done</code>. Fix: <code>src/posix/public_ip_posix.c</code> wartet in <code>public_ip_print()</code> gebunden über <code>pthread_cond_timedwait</code> (1 s, sofort wenn fertig).</li>
+<li class="ok"><strong>CPU-Details WSL2:</strong> Kernzählung off-by-one (17 → 16 auf 7800X3D), <code>-Core Processor</code>-Suffix abgeschnitten (wie Windows).</li>
+<li class="ok"><strong>Version 0.1.0 → 0.2.0:</strong> <code>src/main.c</code>, <code>CMakeLists.txt</code> (project VERSION), Win-UA-String in <code>src/public_ip.c</code>.</li>
+</ul>
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong>Linux-Komfortzapf:</strong> WSL-<code>~/.zshrc</code> bekommt Funktion <code>hrf()</code>, die inkrementell <code>cmake --build build-wsl</code> ausführt und dann das Binär startet — analog zum Windows-Alias <code>hrf</code>. Flag-Argumente (<code>-n</code>, <code>-v</code>, …) werden durchgereicht.</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok"><strong>Windows:</strong> Release-Build Exit 0, <code>hardfetch.exe -v</code> → <code>hardfetch v0.2.0</code>.</li>
+<li class="ok"><strong>WSL2 (selbst gebaut und ausgeführt):</strong> <code>./build-wsl/hardfetch -n</code> → <code>eth0 172.26.98.227/20</code> + <code>Public 178.190.95.110</code>; GPU-Detail-Zeile RTX 5070 korrekt; Build <code>BUILD_OK</code>. <code>zsh -ic 'hrf'</code> → v0.2.0, <code>hrf -n</code> → Netz-Sektion.</li>
+</ul>
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Keine Commits in dieser Session.</li>
+</ul>
+
+<!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
+<h2>Protokoll vom 29.08.2026 (4. Session) — <code>-n</code>/<code>--net</code> &amp; WSL2-Port</h2>
+<h3>Analyse und Befund</h3>
+<ul>
+<li class="ok"><strong>Anforderung Netz-Gating:</strong> die neue Netz-Sektion soll nicht mehr standardmäßig erscheinen, sondern nur mit <code>-n</code> / <code>--net</code>. Gleichzeitig soll hardfetch unter WSL2 laufen.</li>
+<li class="ok"><strong>Folge für <code>--net</code>:</strong> der alte Durchsatz-/Ping-Abschnitt (<code>network.c</code>, ICMP-Admin-Pflicht) wird gestrichen; das Flag wird für die neue Netz-Sektion (Interfaces + öffentliche IP) umgewidmet, jetzt ohne Admin.</li>
+<li class="warn"><strong>Verifikation WSL2 nicht möglich:</strong> in dieser Windows-/MSVC-Shell gibt es keinen Linux-Compiler; der WSL2-Build kann erst beim Nutzer geprüft werden. Risiko: <code>-std=c11</code> + POSIX-Funktionen (CMake setzt C11) erfordert Feature-Test-Makros.</li>
+</ul>
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong><code>src/main.c</code> portabel + Gating:</strong> <code>windows.h</code>/<code>lmcons.h</code> in <code>#ifdef _WIN32</code>-Block (User/Host via <code>GetUserNameA</code>/<code>GetComputerNameA</code> bzw. <code>getenv("USER")</code>/<code>gethostname</code>). Flag-Parsung um <code>-n</code> erweitert. <code>public_ip_start</code> und die Netz-Sektion nur, wenn <code>show_net</code>. Hilfe-Text aktualisiert (kein Admin-Hinweis mehr). <code>strncpy</code> im Win-Zweig durch <code>strncpy_s(..., _TRUNCATE)</code> ersetzt (C4996-Warnung weg).</li>
+<li class="ok"><strong><code>src/output.c</code> portabel:</strong> <code>output_init</code> per <code>#ifdef _WIN32</code> (VT-Processing + UTF-8-CP) bzw. <code>setvbuf</code> zeilen-gepuffert auf POSIX. Restliche ANSI-Prints identisch.</li>
+<li class="ok"><strong>Alter Netz-Code entfernt:</strong> <code>src/network.c</code> + <code>src/network.h</code> gelöscht; aus <code>CMakeLists.txt</code> raus.</li>
+<li class="ok"><strong><code>CMakeLists.txt</code> Plattformweiche:</strong> <code>FATAL_ERROR if NOT WIN32</code> entfernt. <code>HF_COMMON = main.c + output.c</code> in beiden Targets. WIN32-Zweig: bisherige Windows-Sourcen (ohne <code>network.c</code>), WMI-/PDH-Libs. Linux-Zweig: 13 neue <code>src/posix/*.c</code> + <code>target_link_libraries(hardfetch PRIVATE pthread)</code>. Global <code>add_compile_definitions(_POSIX_C_SOURCE=200809L)</code> im Linux-Zweig, damit POSIX-Funktionen unter <code>-std=c11</code> sichtbar sind.</li>
+<li class="ok"><strong><code>src/posix/</code> (13 neue Module):</strong> <code>os_info</code> (<code>/etc/os-release</code> + uname, WSL2-Erkennung via <code>WSL_DISTRO_NAME</code>), <code>host</code> (DMI <code>product_name</code>, Fallbacks), <code>kernel</code> (uname), <code>uptime</code> (<code>/proc/uptime</code>), <code>shell</code> (<code>$SHELL</code> + <code>--version</code>-Parse), <code>gpu</code> (<code>/sys/class/drm</code>-Enumeration + Vendor-Mapping), <code>cpu</code> (<code>/proc/cpuinfo</code> + <code>/proc/stat</code>-Load mit <code>nanosleep</code>), <code>cpu_temp</code> (<code>/sys/class/thermal</code>), <code>memory</code> (<code>/proc/meminfo</code>), <code>memory_spd</code> (Stub: <code>-1</code>), <code>storage</code> (<code>statvfs("/")</code>), <code>ip_addr</code> (<code>getifaddrs</code>), <code>public_ip</code> (pthread + raw Socket HTTP <code>GET http://ifconfig.me/ip</code>, zero-dep, 3-s-Timeout).</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok"><strong>Windows-Build:</strong> Release kompiliert mit Exit 0, keine Warnungen. <code>hardfetch</code> ohne Flag → keine Netz-Sektion (Wall-Zeit 0,22–0,25 s). <code>-n</code> und <code>--net</code> → Netz-Sektion mit Interfaces + <code>Public 178.190.95.110</code>.</li>
+<li class="warn"><strong>WSL2-Build:</strong> nicht verifizierbar in dieser Umgebung. Bitte in WSL2 ausführen: <code>cmake -B build &amp;&amp; cmake --build build --config Release</code>; etwaige Compile-/Link-Fehler bitte melden.</li>
+</ul>
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Keine Commits in dieser Session.</li>
+</ul>
+<h3>Analyse und Befund</h3>
+<ul>
+<li class="ok"><strong>Anforderung:</strong> letzte Zeile nach <code>Disk</code> soll zeigen, in welchen Netzen das Gerät mit welcher IP ist, plus die öffentliche IP. Farben sollen einheitlich auf allen Geräten/Plattformen aussehen.</li>
+<li class="ok"><strong>Bestand:</strong> <code>src/ip_addr.c</code> existierte, war aber toter Code — <code>print_ip_info()</code> wurde in <code>main.c</code> nie aufgerufen und gab zudem nur das eine "beste" Interface (WLAN &gt; Ethernet &gt; Tunnel) aus. Öffentliche IP fehlte komplett.</li>
+<li class="ok"><strong>Farben:</strong> bereits standard-ANSI (<code>\x1b[90/92/97/1;90m</code>) in <code>src/output.c</code> — plattformunabhängig, identische Darstellung auf Windows/macOS/Linux. Kein Auto-Strip bei Pipe (gewünscht).</li>
+</ul>
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong><code>src/ip_addr.c</code> umgeschrieben:</strong> listet alle aktiven, nicht-Loopback IPv4-Adapter (FriendlyName auf 10 Zeichen begrenzt, passend zum Block-Layout) statt nur eines. Mehrere IPs pro Interface als Folgezeilen mit eingerücktem Label.</li>
+<li class="ok"><strong><code>src/public_ip.h</code> / <code>src/public_ip.c</code> (neu):</strong> WinHTTP-HTTPS-Request an <code>https://api.ipify.org</code> im Hintergrund-Thread (<code>CreateThread</code> + Event), Timeout 1500 ms pro Stufe (resolve/connect/send/receive). <code>public_ip_start()</code> früh in <code>main</code>, <code>public_ip_print()</code> gibt die IP aus oder <code>N/A</code>, falls Thread noch nicht fertig (Hauptpfad blockiert nicht).</li>
+<li class="ok"><strong><code>CMakeLists.txt</code>:</strong> <code>src/ip_addr.c</code> und <code>src/public_ip.c</code> ergänzt; <code>winhttp</code> war bereits gelinkt.</li>
+<li class="ok"><strong><code>src/main.c</code>:</strong> <code>public_ip_start()</code> direkt nach <code>output_init()</code>; neuer Block nach <code>print_storage_info</code> + Newline: <code>print_ip_info()</code>, <code>public_ip_print()</code>, Newline. <code>--net</code> (Durchsatz/Ping) bleibt unangetastet.</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok"><strong>Build:</strong> Release kompiliert mit Exit 0. Korrekturen: MSVC-C verlangt benannten Parameter in Funktions-<em>definition</em> (C++ erlaubt unbenannt) — <code>fetch_proc(LPVOID arg)</code>; <code>strncpy</code>-C4996-Warnung in <code>ip_addr.c</code> durch <code>memcpy(name,"Net",4)</code> ersetzt.</li>
+<li class="ok"><strong>Ausgabe:</strong> zeigt alle aktiven Interfaces (Tailscale, Ethernet 2, Npcap Loop, WLAN, vEthernet) je mit IP/CIDR; <code>Public  178.190.95.110</code> (api.ipify.org) korrekt aufgelöst.</li>
+<li class="ok"><strong>Wall-Zeit:</strong> 5 Läufe = 0,23–0,26 s (vorher 0,22 s). Öffentliche IP schloss innerhalb des Hauptpfads ab; keine messbare Verzögerung dank Async-Thread.</li>
+</ul>
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Keine Commits in dieser Session.</li>
+</ul>
+<h3>Analyse und Befund</h3>
+<ul>
+<li class="ok"><strong>Per-Sektion-Timing (stderr, GetTickCount64):</strong> Baseline <code>cpu</code>-Sektion = <strong>515 / 468 ms</strong> (zwei Läufe), alle übrigen Sektionen 0–32 ms. Die Verzögerung steckt vollständig in <code>print_cpu_info</code>.</li>
+<li class="warn"><strong>WMI-Warmup brachte 0 ms:</strong> Hintergrund-Thread, der <code>ROOT\CIMV2</code> und <code>ROOT\WMI</code> vorab verbindet und die genutzten Klassen abfragt. A/B ohne Warmup: <code>cpu</code> = 515 / 468 ms — identisch. <code>wmiprvse</code> war bereits warm. Warmup als toter Code entfernt.</li>
+<li class="ok"><strong>Echte Engpässe in <code>cpu</code>:</strong> Per-Region-Timing (Mainline / Load / Temp) ergab: PDH-Block <strong>265–312 ms</strong>, GetSystemTimes-Block ~30 ms, Temp-Abfrage ~125 ms. Hauptkosten sind zwei <code>PdhCollectQueryData</code>-Aufrufe auf AMD-Ryzen-Countern (je ~130 ms).</li>
+</ul>
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong>PDH zeitbegrenzt:</strong> <code>src/cpu.c</code> — PDH-Block in Hintergrund-Thread (<code>pdh_worker</code>, <code>CreateThread</code> + Event); <code>WaitForSingleObject</code> 100 ms. Bei Timeout: Fallback auf Registry-<code>~MHz</code> (auf AMD identische Anzeige wie bisher; Intel behält PDH-Daten, wenn schnell genug). Sleeps von 50/50/100 ms auf 20/20/20 ms reduziert und beide PDH-Collect-Zyklen zu einem zusammengefasst.</li>
+<li class="ok"><strong>WMI-Temp zeitbegrenzt:</strong> <code>src/cpu_temp.cpp</code> — <code>get_cpu_temp_celsius</code> in Hintergrund-Thread (<code>temp_fetch</code>), WaitForSingleObject 150 ms, bei Timeout <code>N/A</code>. Auf diesem System liefert die Abfrage innerhalb des Fensters <strong>17 °C</strong>.</li>
+<li class="ok"><strong>Diagnose-Timing entfernt:</strong> alle <code>fprintf(stderr, ...)</code> und <code>TM</code>-Makros aus <code>main.c</code>/<code>cpu.c</code> entfernt.</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok"><strong>Gesamt-Wall-Zeit:</strong> <code>Measure-Command</code> (5 Läufe) = <strong>0,22 s</strong> konsistent (vorher 0,51–0,68 s). Faktor ~2,5–3x.</li>
+<li class="ok"><strong>Per-Sektion (vor Cleanup):</strong> <code>cpu</code> = 156–172 ms (vorher 312–375 ms).</li>
+<li class="ok"><strong>Ausgabe korrekt:</strong> CPU-Zeile zeigt 4,19 GHz (Registry-Basis — identisch zum bisherigen AMD-Verhalten, aber instant); Temp 17 °C (WMI erfolgreich); RAM 6000 MHz; GPU-Daten unverändert.</li>
+<li class="ok"><strong>Build:</strong> Release kompiliert mit Exit 0; Flags <code>-v</code>, <code>-h</code> und Alias <code>hrf</code> aus Session 1 weiterhin funktional.</li>
+</ul>
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Keine Commits in dieser Session. Uncommittet: <code>src/main.c</code>, <code>src/cpu.c</code>, <code>src/cpu_temp.cpp</code>, <code>AGENTS.md</code>, <code>edits.txt</code>.</li>
+</ul>
+<h3>Analyse und Befund</h3>
+<ul>
+<li class="ok"><strong>Kurz-Flags ergänzt:</strong> <code>src/main.c</code> verarbeitet zusätzlich <code>-v</code> und <code>-h</code>; Hilfe-Text nennt beide Kurzformen.</li>
+<li class="warn"><strong>Alias-Name <code>si</code> nicht nutzbar:</strong> <code>si</code> ist PowerShell-Built-in-Alias für <code>Set-Item</code> (constant/read-only), nicht überschreibbar. <code>Set-Alias -Name si</code> wirft beim Profil-Laden einen Fehler; Zeile daher entfernt, Ersatz <code>hrf</code> gewählt.</li>
+<li class="warn"><strong>Build-Umgebung der Shell:</strong> <code>cmake</code> nicht auf <code>PATH</code>; <code>vcvars64.bat</code> scheitert hier an <code>vswhere.exe</code> (PATH/Erkennung). Verifikation über manuelles Env-Setup: MSVC <code>14.44.35207</code>, Windows SDK <code>10.0.26100.0</code>.</li>
+</ul>
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong>Flags:</strong> <code>src/main.c</code>: <code>--version|-v</code> und <code>--help|-h</code> geprüft, Hilfe-Text ergänzt.</li>
+<li class="ok"><strong>Profil:</strong> <code>Microsoft.PowerShell_profile.ps1</code>: fehlerhafte <code>si</code>-Zeile entfernt, <code>Set-Alias -Name hrf -Value '...\build\Release\hardfetch.exe'</code> ergänzt.</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok"><strong>Build:</strong> <code>cmake -B build -A x64</code> + <code>cmake --build build --config Release</code> mit manuellem MSVC/SDK-Env, Exit-Code 0.</li>
+<li class="ok"><strong>Flags:</strong> <code>hardfetch.exe -v</code> → <code>hardfetch v0.1.0</code>; <code>--version</code> identisch; <code>-h</code> zeigt Hilfe.</li>
+<li class="ok"><strong>Alias:</strong> frische pwsh lädt Profil; <code>Get-Alias hrf</code> → Definition = Exe-Pfad; <code>Get-Alias si</code> → <code>Set-Item</code>.</li>
+</ul>
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Keine Commits in dieser Session. Uncommittet: <code>src/main.c</code>, <code>AGENTS.md</code>, <code>edits.txt</code>.</li>
+</ul>
+
+<h2>Code und Repository</h2>
+<ul>
+<li>Repo: <code>C:\Users\v\Documents\lib\hardfetch</code> (Git). Letzte Commits: <code>5e05c43</code> (Fix main.c-Modulaufrufe), <code>6b1d77a</code> (Initial v0.1.0).</li>
+<li>Relevante Pfade: <code>src/main.c</code> (Einstieg, Flag-Parsing), <code>src/output.c/.h</code> (Formatierung), WMI-Module <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code>.</li>
+<li>Design-Referenz: <code>plan.md</code> (Deutsch) ist autoritative Design-Doku, vor Feature-Erweiterungen konsultieren.</li>
+</ul>
+
+<h2>Build, Tests und Skripte</h2>
+<ul>
+<li><code>cmake -B build -A x64</code> — Konfiguration (braucht VS-2022-x64-Umgebung).</li>
+<li><code>cmake --build build --config Release</code> — Build; Ergebnis <code>build\Release\hardfetch.exe</code>.</li>
+<li><code>hrf</code> — PowerShell-Alias auf <code>build\Release\hardfetch.exe</code>.</li>
+<li>Workaround bei kaputtem <code>vcvars64.bat</code> in Fremd-Shell: <code>INCLUDE</code>/<code>LIB</code>/<code>PATH</code> manuell auf MSVC <code>14.44.35207</code> + SDK <code>10.0.26100.0</code> setzen.</li>
+<li>Kein Testframework; Verifikation über Flags und Ausgabe am gebauten Binary.</li>
+</ul>
+
+<h2>Deployment und Betrieb</h2>
+<ul>
+<li>Lokal: <code>build\Release\hardfetch.exe</code>; Start über <code>hrf</code> oder direkten Pfad.</li>
+<li>Adminrechte nötig für <code>--net</code> (ICMP), NVMe-Temp, CPU-Power, WMI-Thermalzonen.</li>
+</ul>
+
+</body>
+</html>

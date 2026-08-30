@@ -2,6 +2,7 @@
 #include "output.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -36,49 +37,38 @@ void print_ip_info(void)
             return;
         }
     }
-
-    if (ret != ERROR_SUCCESS) {
-        free(buf);
-        return;
-    }
-
-    IP_ADAPTER_ADDRESSES* best = NULL;
-    int best_priority = 999;
+    if (ret != ERROR_SUCCESS) { free(buf); return; }
 
     for (IP_ADAPTER_ADDRESSES* a = buf; a; a = a->Next) {
         if (a->OperStatus != IfOperStatusUp) continue;
         if ((ULONG)a->IfType == IF_TYPE_LOOPBACK) continue;
 
-        ULONG type = (ULONG)a->IfType;
+        const wchar_t* wn = a->FriendlyName ? a->FriendlyName : a->Description;
+        char name[11] = {0};
+        if (wn)
+            WideCharToMultiByte(CP_UTF8, 0, wn, -1, name, sizeof(name) - 1, NULL, NULL);
+        if (!name[0])
+            memcpy(name, "Net", 4);
 
-        int prio;
-        if (type == IF_TYPE_IEEE80211)            prio = 0;
-        else if (type == IF_TYPE_ETHERNET_CSMACD) prio = 1;
-        else if (type == 131)                    prio = 3;
-        else                                      prio = 2;
-
-        if (prio >= best_priority) continue;
-        best_priority = prio;
-        best = a;
-    }
-
-    if (best) {
-        for (IP_ADAPTER_UNICAST_ADDRESS* u = best->FirstUnicastAddress; u; u = u->Next) {
+        int shown = 0;
+        for (IP_ADAPTER_UNICAST_ADDRESS* u = a->FirstUnicastAddress; u; u = u->Next) {
             if (u->Address.lpSockaddr->sa_family != AF_INET) continue;
-
             SOCKADDR_IN* sa = (SOCKADDR_IN*)u->Address.lpSockaddr;
             char ipStr[64];
             inet_ntop(AF_INET, &sa->sin_addr, ipStr, sizeof(ipStr));
 
-            ULONG prefixLen = u->OnLinkPrefixLength ? u->OnLinkPrefixLength : 0;
+            char val[96];
+            ULONG prefix = u->OnLinkPrefixLength;
+            if (prefix) snprintf(val, sizeof(val), "%s/%lu", ipStr, prefix);
+            else        snprintf(val, sizeof(val), "%s", ipStr);
 
-            char buf2[256];
-            snprintf(buf2, sizeof(buf2), "%s/%lu", ipStr, prefixLen);
-            print_block("IP", buf2);
-            free(buf);
-            return;
+            const char* lbl = shown ? "  " : name;
+            if (shown)
+                printf("            \x1b[90m%-10s\x1b[0m  \x1b[97m%s\x1b[0m\n", lbl, val);
+            else
+                print_block(lbl, val);
+            shown++;
         }
     }
-
     free(buf);
 }

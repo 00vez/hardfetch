@@ -14,6 +14,49 @@ static void rtrim(char* s)
         s[--n] = '\0';
 }
 
+static volatile unsigned int g_pdh_freq = 0;
+static HANDLE g_pdh_evt = NULL;
+
+static DWORD WINAPI pdh_worker(LPVOID arg)
+{
+    unsigned int base = (unsigned int)(uintptr_t)arg;
+    unsigned int f = base;
+    PDH_HQUERY q;
+    if (PdhOpenQueryA(NULL, 0, &q) == ERROR_SUCCESS) {
+        PDH_HCOUNTER fc = NULL, pc = NULL;
+        int hf = 0, hp = 0;
+        if (PdhAddCounterA(q, "\\Processor Performance(PPM_Processor_0)\\Processor Frequency", 0, &fc) == ERROR_SUCCESS ||
+            PdhAddCounterA(q, "\\Processor Information(_Total)\\Processor Frequency", 0, &fc) == ERROR_SUCCESS)
+            hf = 1;
+        if (PdhAddCounterA(q, "\\Processor Performance(PPM_Processor_0)\\% of Maximum Frequency", 0, &pc) == ERROR_SUCCESS)
+            hp = 1;
+        if (hf || hp) {
+            PdhCollectQueryData(q);
+            Sleep(20);
+            PdhCollectQueryData(q);
+            if (hf) {
+                PDH_FMT_COUNTERVALUE v;
+                if (PdhGetFormattedCounterValue(fc, PDH_FMT_DOUBLE|PDH_FMT_NOCAP100, NULL, &v) == ERROR_SUCCESS && v.CStatus == 0)
+                    f = (unsigned int)(v.doubleValue + 0.5);
+            }
+            if (hp) {
+                PDH_FMT_COUNTERVALUE v;
+                if (PdhGetFormattedCounterValue(pc, PDH_FMT_DOUBLE|PDH_FMT_NOCAP100, NULL, &v) == ERROR_SUCCESS && v.CStatus == 0 && v.doubleValue > 0) {
+                    double pct = v.doubleValue;
+                    if (pct < 99.5 && pct > 0) {
+                        unsigned int b = (unsigned int)(f / (pct/100.0) + 0.5);
+                        if (b > f) f = b;
+                    }
+                }
+            }
+        }
+        PdhCloseQuery(q);
+    }
+    g_pdh_freq = f;
+    if (g_pdh_evt) SetEvent(g_pdh_evt);
+    return 0;
+}
+
 void print_cpu_info(void)
 {
     char name[256] = {0};
@@ -40,34 +83,16 @@ void print_cpu_info(void)
     numLogical = si.dwNumberOfProcessors;
 
     unsigned int freqMhz = mhz;
-    PDH_HQUERY pdhQuery;
-    if (PdhOpenQueryA(NULL, 0, &pdhQuery) == ERROR_SUCCESS) {
-        PDH_HCOUNTER freqCounter;
-        if (PdhAddCounterA(pdhQuery, "\\Processor Performance(PPM_Processor_0)\\Processor Frequency", 0, &freqCounter) == ERROR_SUCCESS ||
-            PdhAddCounterA(pdhQuery, "\\Processor Information(_Total)\\Processor Frequency", 0, &freqCounter) == ERROR_SUCCESS) {
-            PdhCollectQueryData(pdhQuery);
-            Sleep(50);
-            PdhCollectQueryData(pdhQuery);
-            PDH_FMT_COUNTERVALUE val;
-            if (PdhGetFormattedCounterValue(freqCounter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, NULL, &val) == ERROR_SUCCESS && val.CStatus == 0)
-                freqMhz = (unsigned int)(val.doubleValue + 0.5);
+    g_pdh_evt = CreateEventA(NULL, FALSE, FALSE, NULL);
+    if (g_pdh_evt) {
+        HANDLE t = CreateThread(NULL, 0, pdh_worker, (LPVOID)(uintptr_t)mhz, 0, NULL);
+        if (t) {
+            if (WaitForSingleObject(g_pdh_evt, 100) == WAIT_OBJECT_0)
+                freqMhz = g_pdh_freq;
+            CloseHandle(t);
         }
-
-        PDH_HCOUNTER pctCounter;
-        if (PdhAddCounterA(pdhQuery, "\\Processor Performance(PPM_Processor_0)\\% of Maximum Frequency", 0, &pctCounter) == ERROR_SUCCESS) {
-            PdhCollectQueryData(pdhQuery);
-            Sleep(50);
-            PdhCollectQueryData(pdhQuery);
-            PDH_FMT_COUNTERVALUE val;
-            if (PdhGetFormattedCounterValue(pctCounter, PDH_FMT_DOUBLE | PDH_FMT_NOCAP100, NULL, &val) == ERROR_SUCCESS && val.CStatus == 0 && val.doubleValue > 0) {
-                double pct = val.doubleValue;
-                if (pct < 99.5 && pct > 0) {
-                    unsigned int boostMhz = (unsigned int)(freqMhz / (pct / 100.0) + 0.5);
-                    if (boostMhz > freqMhz) freqMhz = boostMhz;
-                }
-            }
-        }
-        PdhCloseQuery(pdhQuery);
+        CloseHandle(g_pdh_evt);
+        g_pdh_evt = NULL;
     }
 
     // Strip " N-Core Processor" / " N-Core" suffix from name
@@ -98,7 +123,7 @@ void print_cpu_info(void)
     double load = 0.0;
     FILETIME idleTime1, kernelTime1, userTime1;
     if (GetSystemTimes(&idleTime1, &kernelTime1, &userTime1)) {
-        Sleep(100);
+        Sleep(20);
         FILETIME idleTime2, kernelTime2, userTime2;
         if (GetSystemTimes(&idleTime2, &kernelTime2, &userTime2)) {
             ULARGE_INTEGER idle1, kernel1, user1;

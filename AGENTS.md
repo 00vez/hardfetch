@@ -18,6 +18,29 @@ Single CMake target, flat `src/`. Entry: `src/main.c`. C11 for `.c` files; C++17
 
 CMake quirks: `LINKER_LANGUAGE C` override on mixed target, empty `CMAKE_CXX_IMPLICIT_LINK_LIBRARIES` to suppress libstdc++.
 
+## Runtime requirements
+
+- Admin rights needed: ICMP ping (`--net`), NVMe temp, CPU power, WMI thermal zones (CPU temp)
+- Network section hidden unless `--net` flag passed
+- No VC++ Redistributable needed (static `/MT`)
+
+## Output quirks
+
+- ANSI colors: labels gray, values white/green, sections bold gray
+- No logo or frame
+- Single pass, no loops or sleeps
+- 2-space indent, K&R braces in source
+
+## Module quirks
+
+- `cpu_temp.cpp` and `memory_spd.cpp` use WMI COM (C++), not pure C
+- `gpu.cpp` (not `gpu_nvidia.c`) handles NVIDIA via dynamic NVML + WMI
+- `storage.c` uses `GetDiskFreeSpaceExA` (usage % + GB/TiB), not temp by default
+- `network.c` is async thread + 4 ICMP pings (avg + jitter) + WinHTTP throughput tests
+- `cpu.c` uses `GetSystemTimes()` for load, not PDH
+- `os_info.c` replaces "Windows 10" with "Windows 11" for build >= 22000
+- `shell.c` reads PowerShell version from registry, not EXE file version
+
 ## Gotchas an agent will miss
 
 - **Dead file**: `src/gpu_nvidia.c` is **not compiled** — `gpu.cpp` replaced it (WMI multi-GPU + NVML dynamic)
@@ -35,19 +58,6 @@ CMake quirks: `LINKER_LANGUAGE C` override on mixed target, empty `CMAKE_CXX_IMP
 ## GPU
 
 NVML loaded dynamically via `LoadLibraryA("nvml.dll")` inside `gpu.cpp` — never link statically. If NVIDIA driver absent, prints `[NVIDIA driver not found]`. Minimal `include/nvml.h` exists (used as reference; gpu.cpp also has inline typedefs).
-
-## Runtime
-
-- No VC++ Redistributable needed (static `/MT`)
-- Admin rights needed: ICMP ping (`--net`), NVMe temperature, CPU power, WMI thermal zones (CPU temp)
-- Network section hidden unless `--net` flag passed
-
-## Code style
-
-- 2-space indent, K&R braces
-- Header guards: `HF_<MODULE>_H`
-- Functions prefixed with module name
-- No `typedef` for structs
 
 ## Known issues (not yet fixed)
 

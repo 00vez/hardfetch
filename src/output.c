@@ -1,19 +1,21 @@
 #include "output.h"
 
 #include <stdio.h>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 void output_init(void)
 {
-    HANDLE hConsole = NULL;
-    hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+#ifdef _WIN32
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hConsole != INVALID_HANDLE_VALUE) {
         DWORD mode = 0;
-        if (GetConsoleMode(hConsole, &mode)) {
+        if (GetConsoleMode(hConsole, &mode))
             SetConsoleMode(hConsole, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-        }
     }
     SetConsoleOutputCP(CP_UTF8);
+#endif
 }
 
 void print_label(const char* label)
@@ -69,7 +71,6 @@ void print_detail(const char* content)
     print_newline();
 }
 
-// New compact format functions
 void print_header(const char* text)
 {
     printf("\x1b[92m%s\x1b[0m\n", text);

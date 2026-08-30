@@ -74,16 +74,42 @@ static HRESULT wmi_query(const wchar_t* ns, const wchar_t* queryStr,
     return hr;
 }
 
-static int get_cpu_temp_celsius(void)
+static volatile LONG  g_temp_init = 0;
+static volatile int   g_temp_value = -1;
+static HANDLE         g_temp_evt = NULL;
+static HANDLE         g_temp_thr = NULL;
+
+static DWORD WINAPI temp_fetch(LPVOID)
 {
     LONG temp = -1;
+    int r = -1;
     if (wmi_query(L"ROOT\\WMI", L"SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature",
                   L"CurrentTemperature", &temp) == S_OK && temp >= 0)
-        return (int)(temp / 10.0 - 273.15 + 0.5);
-    if (wmi_query(L"ROOT\\CIMV2",
+        r = (int)(temp / 10.0 - 273.15 + 0.5);
+    else if (wmi_query(L"ROOT\\CIMV2",
                   L"SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation",
                   L"Temperature", &temp) == S_OK && temp >= 0)
-        return (int)(temp / 10.0 - 273.15 + 0.5);
+        r = (int)(temp / 10.0 - 273.15 + 0.5);
+    g_temp_value = r;
+    if (g_temp_evt) SetEvent(g_temp_evt);
+    return 0;
+}
+
+static int get_cpu_temp_celsius(void)
+{
+    if (InterlockedCompareExchange(&g_temp_init, 1, 0) != 0) return -1;
+    g_temp_value = -1;
+    g_temp_evt = CreateEventA(NULL, FALSE, FALSE, NULL);
+    if (!g_temp_evt) return -1;
+    g_temp_thr = CreateThread(NULL, 0, temp_fetch, NULL, 0, NULL);
+    if (!g_temp_thr) { CloseHandle(g_temp_evt); g_temp_evt = NULL; return -1; }
+    if (WaitForSingleObject(g_temp_evt, 150) == WAIT_OBJECT_0) {
+        int r = g_temp_value;
+        CloseHandle(g_temp_thr); g_temp_thr = NULL;
+        CloseHandle(g_temp_evt); g_temp_evt = NULL;
+        return r;
+    }
+    CloseHandle(g_temp_thr); g_temp_thr = NULL;
     return -1;
 }
 
