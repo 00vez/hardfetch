@@ -72,6 +72,7 @@ void print_cpu_info(void)
 #if defined(__APPLE__)
     {
         int got_name = 0;
+        (void)got_name;
         char brand[256] = {0};
         size_t len = sizeof(brand);
         if (sysctlbyname("machdep.cpu.brand_string", brand, &len, NULL, 0) == 0) {
@@ -107,10 +108,12 @@ void print_cpu_info(void)
         if (*bp == ' ') *bp = '\0';
     }
 
+    (void)parse_after;
     double s1 = read_load();
     struct timespec ts = { 0, 20 * 1000 * 1000 };
     nanosleep(&ts, NULL);
     double s2 = read_load();
+    (void)s1;
     double load = s2;
 
     char mainLine[320];
