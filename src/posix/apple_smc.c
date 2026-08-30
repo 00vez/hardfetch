@@ -70,6 +70,15 @@ static int apple_smc_read_key(io_connect_t conn, const char* key_name, int* temp
     return res;
 }
 
+int apple_smc_read_int(const char* key_name, int* out_val) {
+    int temp = 0;
+    if (apple_smc_read_temp(key_name, &temp) == 0) {
+        *out_val = temp;
+        return 0;
+    }
+    return -1;
+}
+
 int apple_smc_read_temp(const char* key_name, int* temp_c) {
     io_service_t svc = IOServiceGetMatchingService(MACH_PORT_NULL, IOServiceNameMatching("AppleSMC"));
     if (!svc) return -1;
