@@ -84,9 +84,13 @@ void print_cpu_info(void)
         len = sizeof(ncpu);
         sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0);
         logical = ncpu;
-        uint32_t mhz_max = appleMaxFreqMHz("voltage-states5-sram");
-        if (mhz_max == 0) mhz_max = appleMaxFreqMHz("voltage-states1-sram");
-        mhz = (double)mhz_max;
+        uint32_t mhz_p = appleMaxFreqMHz("voltage-states5-sram");
+        uint32_t mhz_e = appleMaxFreqMHz("voltage-states1-sram");
+        double mhz = (double)mhz_p;
+        char mainLine[320];
+        int pos = snprintf(mainLine, sizeof(mainLine), "%s (%d)", name, logical);
+        if (mhz > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " @ %.2f GHz", mhz / 1000.0);
+        if (mhz_e > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " E %.2f GHz", mhz_e / 1000.0);
     }
 #else
     FILE* f = fopen("/proc/cpuinfo", "r");

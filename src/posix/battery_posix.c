@@ -10,7 +10,7 @@ static int read_smc_int(const char* key) {
         CFStringRef k = CFStringCreateWithCString(NULL, key, kCFStringEncodingUTF8);
         if (k) {
             CFDataRef d = (CFDataRef)IORegistryEntryCreateCFProperty(svc, k, kCFAllocatorDefault, 0);
-            if (d && CFGetTypeID(d) == CFDataTypeID) {
+            if (d && CFGetTypeID(d) == CFDataGetTypeID()) {
                 int32_t i32 = 0;
                 if (CFNumberGetValue((CFNumberRef)d, kCFNumberSInt32Type, &i32)) val = (int)i32;
                 CFRelease(d);
