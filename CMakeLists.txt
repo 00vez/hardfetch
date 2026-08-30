@@ -72,4 +72,7 @@ else()
         src/posix/public_ip_posix.c
     )
     target_link_libraries(hardfetch PRIVATE pthread dl)
+    if(APPLE)
+        target_link_libraries(hardfetch PRIVATE "-framework CoreFoundation" "-framework IOKit")
+    endif()
 endif()
