@@ -21,7 +21,7 @@ th { border-bottom-color: #ddd; }
 </style>
 </head>
 <body>
-<div class="date">Protokoll zuletzt aktualisiert: 30.08.2026 (5. Session)</div>
+<div class="date">Protokoll zuletzt aktualisiert: 31.08.2026 (7. Session) — v0.2.4</div>
 <h1>hardfetch – Protokoll &amp; Fortschritt</h1>
 
 <h2>Projektziel</h2>
@@ -32,49 +32,65 @@ th { border-bottom-color: #ddd; }
 
 <h2>Kontext und Ausgangslage</h2>
 <ul>
-<li>Version <code>0.1.0</code>. Windows 11, Build 26200 (25H2). Einzelnes CMake-Target, flaches <code>src/</code>.</li>
-<li>Adminrechte nötig für: ICMP-Ping (<code>--net</code>), NVMe-Temp, CPU-Power, WMI-Thermalzonen (CPU-Temp). Netzwerksektion nur mit <code>--net</code>.</li>
-<li>Toolchain: <strong>VS 2022 BuildTools</strong> unter <code>C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools</code>; Generator Visual Studio 17 2022 (MSBuild), kein Ninja.</li>
-<li>Bekannte Einschränkungen (aus <code>AGENTS.md</code>): CPU zeigt Base (4.2 GHz) statt Boost (5.05 GHz) wegen PDH auf AMD Ryzen (CPPC); AMD-iGPU-VRAM 0 (WMI <code>AdapterRAM</code>); Temp N/A bei manchen Ryzen (k10temp nicht via WMI erreichbar).</li>
-<li><code>src/ip_addr.c</code> wird kompiliert, aber <code>print_ip_info()</code> wird nirgends aufgerufen (toter Code).</li>
+<li>Version <code>0.2.4</code>. Windows 11 25H2 (26200), macOS 26.5 (Darwin 25.5, Apple M4), WSL2 Ubuntu. Einzelnes CMake-Target, <code>src/</code> + <code>src/posix/</code> (Apple/Linux).</li>
+<li>Netzwerksektion nur mit <code>-n/--net</code>, Public-IP via WinHTTP (Win) / POSIX-Socket (Linux/macOS). Kein ICMP mehr, kein Admin nötig.</li>
+<li>Toolchain: VS 2022 BuildTools 17 2022 (MSVC /MT) — Windows; AppleClang 21.0.0 — macOS; gcc — WSL2/Ubuntu. Kein Ninja, kein Redistributable.</li>
+<li>Bekannte Einschränkungen (aus <code>AGENTS.md</code>): AMD Ryzen Boost via PDH 100% (CPPC) — nicht messbar im User-Mode; AMD-iGPU VRAM 0; k10temp N/A.</li>
 </ul>
 
 <h2>Architektur und Entscheidungen</h2>
 <ul>
-<li class="ok"><strong>Windows-spezifische Module:</strong> <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code> nutzen WMI/COM (C++); GPU zusätzlich NVIDIA via dynamischem NVML (<code>LoadLibraryA("nvml.dll")</code>). Kopfzeilen mit <code>extern "C"</code>.</li>
-<li class="ok"><strong>Build-Quirks:</strong> gemischtes Target mit <code>LINKER_LANGUAGE C</code>; leeres <code>CMAKE_CXX_IMPLICIT_LINK_LIBRARIES</code> gegen libstdc++.</li>
-<li class="warn"><strong>Geplanter Port macOS:</strong> Design steht, <strong>noch nicht umgesetzt</strong>. Geteilte POSIX-Schicht (<code>src/posix/</code>) für macOS und Linux/WSL2.</li>
-<li class="ok"><strong>WSL2/Linux-Port (Code):</strong> Plattformweiche in <code>CMakeLists.txt</code>, <code>src/main.c</code> + <code>src/output.c</code> portabel, 13 POSIX-Module (<code>src/posix/*.c</code>); <code>--net</code> repurposed (kein Admin mehr), Durchsatz/Ping entfernt. <strong>Build-Verifikation in WSL2 ausstehend.</strong></li>
+<li class="ok"><strong>Windows-Module (C++ WMI/COM):</strong> <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code> (NVML dynamisch via <code>LoadLibraryA</code>). Header mit <code>extern "C"</code>.</li>
+<li class="ok"><strong>Build-Quirks:</strong> <code>LINKER_LANGUAGE C</code>, leeres <code>CMAKE_CXX_IMPLICIT_LINK_LIBRARIES</code> gegen libstdc++.</li>
+<li class="ok"><strong>POSIX-Schicht <code>src/posix/</code> (Apple + Linux):</strong> 16 Module — <code>os_info/host/kernel/uptime/shell/gpu/cpu/cpu_temp/memory/memory_spd/storage/ip_addr/public_ip/apple_pmgr/apple_smc/battery</code>. Plattformweiche <code>if(WIN32) … else()</code> in <code>CMakeLists.txt</code>.</li>
+<li class="ok"><strong>Apple-Silicon Besonderheiten:</strong> CPU/GPU-Takt via <code>pmgr</code> <code>voltage-states*-sram</code> (CFData, Hz/kHz-Heuristik), Temp via <code>AppleSMC</code> <code>IOConnectCallStructMethod</code> (Selector 2, Sub 5/8/9, 80-Byte <code>SmcParam</code>, <code>flt/sp78/fpe2/ui32</code>), Load via <code>host_processor_info 200ms</code>.</li>
+<li class="ok"><strong>WSL2/Linux verifiziert:</strong> <code>build-wsl/hardfetch</code> per <code>cmake -B build-wsl && cmake --build build-wsl</code> (WSL-Ubuntu, gcc, pthread/dl).</li>
 </ul>
 
 <h2>Akzeptanzkriterien</h2>
 <ul>
-<li class="ok">Kurzform <code>-h</code>/<code>-v</code> funktionieren wie <code>--help</code>/<code>--version</code> (verifiziert am gebauten Binary).</li>
-<li class="ok"><code>hrf</code> ist als Alias in der PowerShell-Profildatei verfügbar und ruft <code>hardfetch.exe</code> (verifiziert).</li>
-<li class="ok">Ausgabeverzögerung nach den ersten Sektionen analysiert und behoben: Gesamt-Wall-Zeit 0,51–0,68 s → <strong>0,22 s</strong> (per <code>Measure-Command</code>, 5 Läufe). Ursachen und Fixes siehe Protokoll Session 2.</li>
-<li class="ok">Netz-Sektion hinter <code>-n</code>/<code>--net</code> (statt immer): Standardlauf ohne Netz, mit Flag erscheinen Interfaces + öffentliche IP. Verifiziert am Build.</li>
-<li class="ok">Alter Durchsatz-/Ping-Abschnitt (<code>network.c</code> + ICMP) entfernt; <code>--net</code> repurposed für die neue Netz-Sektion (kein Admin mehr nötig).</li>
-<li class="warn">WSL2/Linux-Port: Code vollständig (<code>src/posix/*.c</code> + <code>CMakeLists</code>-Plattformweiche), aber <strong>nicht aus Build verifiziert</strong> (kein Linux-Compiler in dieser Umgebung). Erste WSL2-<code>cmake</code>-Build als Verifikationsschritt nötig.</li>
-<li class="ok">Toter Code <code>ip_addr.c</code> aufgelöst: <code>print_ip_info()</code> ist jetzt eingebunden und listet alle aktiven Interfaces (vorher: nur ein "bestes" Interface, nirgends aufgerufen).</li>
-<li class="ok">Farbschema einheitlich: bestehende ANSI-Codes (<code>\x1b[90m</code> grau, <code>\x1b[92m</code> grün, <code>\x1b[97m</code> weiß, <code>\x1b[1;90m</code> fett grau) sind plattformunabhängig; macOS/WSL2-Port übernimmt sie identisch. Kein Auto-Strip bei Pipe.</li>
-<li class="todo">macOS-Build mit denselben Sektionen wie Windows (Best-Effort, fehlende Werte als <code>N/A</code>).</li>
+<li class="ok">Kurzformen <code>-h/-v</code> + <code>-n/--net</code> + <code>-d/--smc-dump</code> (verifiziert: <code>hardfetch -v</code> → v0.2.4, <code>-d</code> → 2129 SMC-Keys).</li>
+<li class="ok"><code>hrf</code> Windows + WSL-<code>hrf()</code> funktionieren; Wall-Zeit Windows 0,22 s (Session 2).</li>
+<li class="ok">Netz-Sektion nur mit <code>-n</code>: Interfaces + Public-IP (WinHTTP / POSIX-Socket, 1-s <code>pthread_cond_timedwait</code>).</li>
+<li class="ok">WSL2 verifiziert: <code>build-wsl/hardfetch -n</code> → eth0 + Public IP, RTX 5070 via NVML, <code>build-wsl</code> grün (WSL-gcc).</li>
+<li class="ok">macOS Apple Silicon verifiziert: <code>build-silicon/hardfetch</code> (AppleClang 21) → CPU <code>Apple M4 @ 4.46 GHz</code>, GPU <code>@ 1.47 GHz</code>, <code>Load 22.7%</code> (host_processor_info 200 ms), <code>Uptime</code> Plural fix, <code>OS (arm64)</code>, Host ohne <code>.local</code>.</li>
+<li class="ok">Farbschema plattformunabhängig (ANSI 90/92/97/1;90), identisch Win/macOS/WSL2.</li>
 </ul>
 
-<h2>Aktueller Status</h2>
+<h2>Aktueller Status — IST-Stand v0.2.4</h2>
 <ul>
-<li class="ok">Release-Build kompiliert fehlerfrei (MSVC, Exit-Code 0); <code>build\Release\hardfetch.exe</code> erzeugt.</li>
-<li class="ok"><code>-v</code>, <code>--version</code>, <code>-h</code>, <code>--help</code> liefern korrekte Ausgabe.</li>
-<li class="ok"><code>hrf</code>-Alias in <code>%USERPROFILE%\Documents\PowerShell\Microsoft.PowerShell_profile.ps1</code> gesetzt; verweist auf <code>C:\Users\v\Documents\lib\hardfetch\build\Release\hardfetch.exe</code>.</li>
-<li class="warn">Änderungen an <code>src/main.c</code> (portabel, <code>-n</code>-Flag, Gating), <code>src/output.c</code> (portabel), <code>src/cpu.c</code>, <code>src/cpu_temp.cpp</code>, <code>src/ip_addr.c</code>, <code>src/public_ip.c</code>, <code>CMakeLists.txt</code> (Plattformweiche Win/Linux), <code>src/posix/*.c</code> (13 neue POSIX-Module), <code>AGENTS.md</code>, <code>edits.txt</code> sind <strong>nicht committet</strong>. Entfernt: <code>src/network.c</code>, <code>src/network.h</code>.</li>
+<li class="ok">Windows: <code>build\Release\hardfetch.exe</code> MSVC /MT, Exit 0; <code>-v/-h/-n</code> korrekt.</li>
+<li class="ok">WSL2: <code>build-wsl/hardfetch</code> gcc, Exit 0; <code>hrf -n</code> → eth0 + RTX 5070 + Public IP.</li>
+<li class="ok">macOS Apple Silicon (M4, Darwin 25.5): <code>build-silicon/hardfetch</code> AppleClang 21, Exit 0; <code>hardfetch -v</code> v0.2.4, <code>-d</code> → 2129 Keys / 1981 Zeilen Dump, <code>hardfetch</code> → CPU 4.46 GHz / GPU 1.47 GHz / Load 22.7%.</li>
+<li class="ok">Alle Änderungen gepusht (master <code>c7e0628…b83e010…d1e4760…04d88b1</code>); <code>export.md</code> v0.2.4 aktuell.</li>
+<li class="warn">Temp bleibt <code>N/A</code> auf M4 (kein stabiler <code>T</code> 5–120 °C nach Dump) — offener Punkt, siehe unten.</li>
 </ul>
 
-<h2>Offen</h2>
+<h2>Offen — noch zu tun</h2>
 <ul>
-<li class="todo">macOS-Build mit denselben Sektionen wie Windows (Best-Effort, fehlende Werte als <code>N/A</code>).</li>
-<li class="todo">Ausstehende Änderungen committen (nach Nutzer-Freigabe).</li>
+<li class="todo">Temp: <code>apple_smc_cpu_temp</code> findet keinen plausiblen <code>T/t</code>-Sensor auf M4 (2129 Keys, 200 T-Keys, aber 0–1 Treffer 5–120 °C). Nächster Versuch: <code>PMU tdev/tdie</code> Keys oder <code>IOHIDEventSystem</code>.</li>
+<li class="todo">Load jetzt korrekt (host_processor_info 200 ms), davor 20 ms/GetSystemTimes → 0%.</li>
+<li class="todo">Battery/Display/GPU-Load nicht im Output verknüpft (Module vorhanden, aber nicht angezeigt).</li>
+<li class="todo">Intel-Mac-Pfad (hw.cpufrequency, dGPU) ungetestet.</li>
+<li class="todo">CI-Matrix (macOS/Ubuntu/Windows) fehlt.</li>
+<li class="todo">Display &amp; CI vorerst nicht im Scope (Nutzer-Vorgabe).</li>
 </ul>
 
 <!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
+<h2>Protokoll vom 31.08.2026 (7. Session) — v0.2.4: SMC Discovery + Load + Build-Fix, IST-Stand</h2>
+<h3>Befund</h3>
+<ul>
+<li class="ok"><strong>Load 0% → 22.7%:</strong> 20 ms/GetSystemTimes war kürzer als Tick-Granularität (hz=100). Fix: <code>host_processor_info PROCESSOR_CPU_LOAD_INFO</code> 200 ms, <code>vm_deallocate</code>, <code>%.1f%%</code> / N/A.</li>
+<li class="ok"><strong>SMC-Dump -d:</strong> <code>hardfetch -d</code> (kurz <code>-d</code>) via <code>AppleSMC IOConnectCallStructMethod</code> Selector 2/Sub 5/8/9, 80-Byte <code>SmcParam</code> (vers 6 + SmcKeyInfo 12), <code>flt/sp78/fpe2/ui32</code> decode, <code>result==0</code> prüfen, little-endian <code>data32=i</code>. WSL-verifiziert (<code>build-wsl</code> grün), MBA-Dump 2129 Keys / 1981 Zeilen, 200 T-Keys, 0–1 Treffer 5–120 °C.</li>
+<li class="warn"><strong>Temp N/A bleibt:</strong> <code>#KEY</code> Smoke-Test ok (2129), aber kein stabiler <code>T/t</code> 5–120 °C auf M4. Ursache: M4 nutzt <code>PMU tdev/tdie</code> statt klassischer Tp/Tg — nächste Iteration dort.</li>
+<li class="ok"><strong>Build-Fixes WSL+macOS:</strong> <code>cpu_posix.c</code> fehlte <code>typedef u_int</code> vor <code>sys/sysctl.h</code> + <code>unistd.h</code> (usleep), <code>memory_posix.c</code> <code>kb_from_line</code> entfernt, <code>memory_spd/apple_pmgr/apple_smc/battery</code> mit <code>#if __APPLE__</code> Guards.</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok">WSL: <code>cmake --build build-wsl</code> → [100%] Built (nach Guards).</li>
+<li class="ok">MBA M4: <code>git pull → b83e010 → d1e4760</code>, <code>rm -rf build-silicon && cmake -B build-silicon -S . && cmake --build build-silicon</code> → erst <code>#KEY nicht lesbar</code> (70 B), nach 80-B-Fix 2129 Keys, <code>hardfetch -v</code> v0.2.4, <code>hardfetch</code> Load 22.7%.</li>
+</ul>
+
 <h2>Protokoll vom 30.08.2026 (5. Session) — Version 0.2.0, WSL2 verifiziert</h2>
 <h3>Befund und Fixes</h3>
 <ul>
