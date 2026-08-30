@@ -7,6 +7,7 @@
 
 #if defined(__APPLE__)
 #include <sys/types.h>
+#include <machine/types.h>
 #include <sys/sysctl.h>
 #endif
 
