@@ -6,13 +6,13 @@
 #include <string.h>
 #include <stdlib.h>
 #if defined(__APPLE__)
-#if defined(__APPLE__)
 typedef unsigned int u_int;
 typedef unsigned char u_char;
 typedef unsigned short u_short;
-#endif
+#include "apple_pmgr.h"
 #include <sys/types.h>
 #include <sys/sysctl.h>
+#endif
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #endif
@@ -92,8 +92,15 @@ static int load_nvml(void)
 extern uint32_t appleMaxFreqMHz(const char* prop);
 static void print_apple_gpu(void)
 {
+    char brand[256] = {0};
+    size_t bl = sizeof(brand);
+    sysctlbyname("machdep.cpu.brand_string", brand, &bl, NULL, 0);
+    char* suf = strstr(brand, "-Core");
+    if (suf) *suf = '\0';
     uint32_t f = appleMaxFreqMHz("voltage-states9-sram");
-    printf("Apple M4 (10) @ %.2f GHz [Integrated]\n", f / 1000.0);
+    printf("%s", brand[0] ? brand : "Apple M4");
+    if (f > 0) printf(" @ %.2f GHz", f / 1000.0);
+    printf(" [Integrated]\n");
 }
 #endif
 
