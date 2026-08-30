@@ -63,6 +63,31 @@ static double read_load(void)
     return load;
 }
 
+#if defined(__APPLE__)
+#include <IOKit/IOKitLib.h>
+#include <CoreFoundation/CoreFoundation.h>
+
+uint32_t appleMaxFreqMHz(const char* prop) {
+    io_service_t svc = IOServiceGetMatchingService(0, IOServiceNameMatching("pmgr"));
+    uint32_t max = 0;
+    if (svc) {
+        CFStringRef key = CFStringCreateWithCString(NULL, prop, kCFStringEncodingUTF8);
+        CFDataRef d = (CFDataRef)IORegistryEntryCreateCFProperty(svc, key, kCFAllocatorDefault, 0);
+        if (d && CFGetTypeID(d) == CFDataGetTypeID()) {
+            uint32_t* p = (uint32_t*)CFDataGetBytePtr(d);
+            CFIndex n = CFDataGetLength(d)/sizeof(uint32_t);
+            for (CFIndex i = 0; i + 1 < n; i += 2)
+                if (p[i] > max) max = p[i];
+            max = (max > 100000000) ? max / 1000000 : max / 1000;
+        }
+        if (d) CFRelease(d);
+        CFRelease(key);
+        IOObjectRelease(svc);
+    }
+    return max;
+}
+#endif
+
 void print_cpu_info(void)
 {
     char name[256] = "Unknown CPU";
@@ -83,14 +108,9 @@ void print_cpu_info(void)
         len = sizeof(ncpu);
         sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0);
         logical = ncpu;
-        int mhz_set = 0;
-        len = sizeof(mhz);
-        if (sysctlbyname("hw.cpufrequency_max", &mhz, &len, NULL, 0) == 0 && mhz > 0) mhz_set = 1;
-        if (!mhz_set) {
-            len = sizeof(mhz);
-            if (sysctlbyname("hw.cpufrequency", &mhz, &len, NULL, 0) == 0 && mhz > 0) mhz_set = 1;
-        }
-        if (mhz_set) mhz = mhz / 1000000.0; else mhz = 0;
+        uint32_t mhz_max = appleMaxFreqMHz("voltage-states5-sram");
+        if (mhz_max == 0) mhz_max = appleMaxFreqMHz("voltage-states1-sram");
+        mhz = (double)mhz_max;
     }
 #else
     FILE* f = fopen("/proc/cpuinfo", "r");
