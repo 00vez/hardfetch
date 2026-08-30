@@ -5,6 +5,9 @@
 #include <time.h>
 
 #if defined(__APPLE__)
+typedef unsigned int u_int;
+typedef unsigned char u_char;
+typedef unsigned short u_short;
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif
