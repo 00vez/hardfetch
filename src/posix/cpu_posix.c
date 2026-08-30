@@ -83,10 +83,14 @@ void print_cpu_info(void)
         len = sizeof(ncpu);
         sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0);
         logical = ncpu;
+        int mhz_set = 0;
         len = sizeof(mhz);
-        sysctlbyname("hw.cpufrequency", &mhz, &len, NULL, 0);
-        mhz = mhz / 1000000.0; // Hz -> GHz
-        if (mhz < 0.1) mhz = 0;
+        if (sysctlbyname("hw.cpufrequency_max", &mhz, &len, NULL, 0) == 0 && mhz > 0) mhz_set = 1;
+        if (!mhz_set) {
+            len = sizeof(mhz);
+            if (sysctlbyname("hw.cpufrequency", &mhz, &len, NULL, 0) == 0 && mhz > 0) mhz_set = 1;
+        }
+        if (mhz_set) mhz = mhz / 1000000.0; else mhz = 0;
     }
 #else
     FILE* f = fopen("/proc/cpuinfo", "r");
