@@ -1,7 +1,13 @@
 #include "../output.h"
+#if defined(__APPLE__)
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
+#endif
 #include <stdio.h>
+#include <string.h>
+#if !defined(__APPLE__)
+void print_battery_info(void){ print_block("Battery","N/A"); }
+#else
 
 static int read_smc_int(const char* key) {
     int val = 0;
@@ -70,3 +76,4 @@ void print_battery_info(void) {
     }
     print_block("Battery", out[0] ? out : "N/A");
 }
+#endif

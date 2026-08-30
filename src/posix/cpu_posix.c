@@ -9,10 +9,14 @@
 #include <time.h>
 
 #if defined(__APPLE__)
+typedef unsigned int u_int;
+typedef unsigned char u_char;
+typedef unsigned short u_short;
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <mach/mach_host.h>
 #include <mach/vm_map.h>
+#include <unistd.h>
 #include "apple_pmgr.h"
 
 static double cpu_usage_percent(unsigned interval_ms) {

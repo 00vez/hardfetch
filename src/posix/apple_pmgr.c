@@ -1,8 +1,13 @@
 #include "apple_pmgr.h"
+#if defined(__APPLE__)
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
+#endif
 
 uint32_t appleMaxFreqMHz(const char* prop) {
+#if !defined(__APPLE__)
+  (void)prop; return 0;
+#else
     io_service_t svc = IOServiceGetMatchingService(0, IOServiceNameMatching("pmgr"));
     uint32_t max = 0;
     if (svc) {
@@ -20,4 +25,6 @@ uint32_t appleMaxFreqMHz(const char* prop) {
         IOObjectRelease(svc);
     }
     return max;
+#endif
+    return 0;
 }

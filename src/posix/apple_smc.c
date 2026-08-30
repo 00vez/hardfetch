@@ -1,10 +1,18 @@
 #include "apple_smc.h"
+#if defined(__APPLE__)
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <libkern/OSByteOrder.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#if !defined(__APPLE__)
+int apple_smc_read_temp(const char *k,int *o){(void)k;(void)o;return -1;}
+int apple_smc_read_int(const char *k,int *o){(void)k;(void)o;return -1;}
+int apple_smc_cpu_temp(int *o){(void)o;return -1;}
+void apple_smc_dump(FILE *o){(void)o;}
+#else
 
 #define SMC_METHOD 2
 #define SMC_CMD_READ_KEY 5
@@ -152,3 +160,4 @@ void apple_smc_dump(FILE *out) {
   }
   IOServiceClose(c);
 }
+#endif

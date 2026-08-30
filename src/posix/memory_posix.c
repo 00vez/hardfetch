@@ -15,6 +15,13 @@ typedef unsigned short u_short;
 #include <mach/mach.h>
 #endif
 
+#ifndef __APPLE__
+static unsigned long kb_from_line(const char *line) {
+  while (*line && (*line < '0' || *line > '9')) line++;
+  return *line ? strtoul(line, NULL, 10) : 0;
+}
+#endif
+
 void print_memory_info(void)
 {
     double totalGiB = 0, usedGiB = 0;
