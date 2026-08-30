@@ -13,13 +13,19 @@ void print_cpu_temp_power(double load)
 #if defined(__APPLE__)
     {
         int val = 0;
+        int found_key = 0;
+        char key_name_buf[32] = {0};
         const char* keys[] = {"TC0D", "TC0P", "TC0E", "Tp05", "Tp09", "Tp0D", "Tp0b", "Tp01", NULL};
         for (int i = 0; keys[i]; i++) {
             if (apple_smc_read_temp(keys[i], &val) == 0 && val > 0) {
                 tempC = val;
+                found_key = i;
+                snprintf(key_name_buf, sizeof(key_name_buf), "%s", keys[i]);
+                fprintf(stderr, "DEBUG SMC: key=%s val=%d tempC=%d\n", key_name_buf, val, tempC);
                 break;
             }
         }
+        if (!found_key) fprintf(stderr, "DEBUG SMC: kein Key gefunden (N/A)\n");
     }
 #else
     FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
