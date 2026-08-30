@@ -3,8 +3,7 @@
 
 #include <stdio.h>
 #if defined(__APPLE__)
-#include <IOKit/IOKitLib.h>
-#include <CoreFoundation/CoreFoundation.h>
+#include "apple_smc.h"
 #endif
 
 void print_cpu_temp_power(double load)
@@ -12,19 +11,15 @@ void print_cpu_temp_power(double load)
     char detail[128];
     int tempC = -1;
 #if defined(__APPLE__)
-    io_service_t smc = IOServiceGetMatchingService(0, IOServiceNameMatching("AppleSMC"));
-    if (smc) {
-        CFStringRef key = CFStringCreateWithCString(NULL, "TC0D", kCFStringEncodingUTF8);
-        CFDataRef d = (CFDataRef)IORegistryEntryCreateCFProperty(smc, key, kCFAllocatorDefault, 0);
-        if (d && CFGetTypeID(d) == CFDataGetTypeID()) {
-            uint8_t* p = (uint8_t*)CFDataGetBytePtr(d);
-            CFIndex n = CFDataGetLength(d);
-            if (n == 2 && p[0] == 0 && p[1] == 0) { /* valid */ }
-            else if (n >= 1) tempC = (int)(int8_t)p[n-1];
+    {
+        int val = 0;
+        const char* keys[] = {"TC0D", "TC0P", "TC0E", "Tp05", "Tp09", "Tp0D", "Tp0b", "Tp01", NULL};
+        for (int i = 0; keys[i]; i++) {
+            if (apple_smc_read_int(keys[i], &val) == 0 && val > 0) {
+                tempC = val / 100; /* Apple SMC meist Hunderter */
+                break;
+            }
         }
-        if (d) CFRelease(d);
-        CFRelease(key);
-        IOObjectRelease(smc);
     }
 #else
     FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
