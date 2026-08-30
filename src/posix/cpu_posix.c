@@ -68,6 +68,7 @@ void print_cpu_info(void)
 {
     char name[256] = "Unknown CPU";
     double mhz = 0;
+    double mhz_e = 0;
     int logical = 0;
 
 #if defined(__APPLE__)
@@ -86,11 +87,9 @@ void print_cpu_info(void)
         logical = ncpu;
         uint32_t mhz_p = appleMaxFreqMHz("voltage-states5-sram");
         uint32_t mhz_e = appleMaxFreqMHz("voltage-states1-sram");
-        double mhz = (double)mhz_p;
-        char mainLine[320];
-        int pos = snprintf(mainLine, sizeof(mainLine), "%s (%d)", name, logical);
-        if (mhz > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " @ %.2f GHz", mhz / 1000.0);
-        if (mhz_e > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " E %.2f GHz", mhz_e / 1000.0);
+        if (mhz_p > 0) mhz = (double)mhz_p / 1000.0;
+        if (mhz_e > 0) mhz_e = (double)mhz_e / 1000.0;
+        /* E-Core shown separately if needed via output formatting below */
     }
 #else
     FILE* f = fopen("/proc/cpuinfo", "r");
@@ -125,7 +124,8 @@ void print_cpu_info(void)
 
     char mainLine[320];
     int pos = snprintf(mainLine, sizeof(mainLine), "%s (%d)", name, logical);
-    if (mhz > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " @ %.2f GHz", mhz / 1000.0);
+    if (mhz > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " @ %.2f GHz", mhz);
+    if (mhz_e > 0) pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " E %.2f GHz", mhz_e);
     print_block_green("CPU", mainLine);
 
     print_cpu_temp_power(load);
