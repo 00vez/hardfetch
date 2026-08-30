@@ -91,13 +91,40 @@ static int load_nvml(void)
 #if defined(__APPLE__)
 static void print_apple_gpu(void)
 {
-    char model[256] = {0};
-    size_t len = sizeof(model);
-    if (sysctlbyname("hw.model", model, &len, NULL, 0) == 0) {
-        printf("Apple %s (Integrated)\n", model);
-    } else {
-        printf("Apple GPU (Unknown)\n");
+    io_iterator_t iter = 0;
+    io_service_t service = 0;
+    char name[256] = "Apple M4";
+    char clockStr[64] = "";
+
+    kern_return_t kr = IOServiceGetMatchingServices(kIOMasterPortDefault,
+        IOServiceMatching("IOAccelerator"), &iter);
+    if (kr == KERN_SUCCESS && iter) {
+        while ((service = IOIteratorNext(iter))) {
+            CFStringRef s = IORegistryEntryCreateCFProperty(service,
+                CFSTR("IOName"), kCFAllocatorDefault, 0);
+            if (s) {
+                char buf[256] = {0};
+                if (CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8)) {
+                    if (strstr(buf, "Apple") || strstr(buf, "M4")) {
+                        strncpy(name, buf, sizeof(name)-1);
+                    }
+                }
+                CFRelease(s);
+            }
+            CFNumberRef clk = IORegistryEntryCreateCFProperty(service,
+                CFSTR("IOClockFrequency"), kCFAllocatorDefault, 0);
+            if (clk) {
+                int64_t val = 0;
+                CFNumberGetValue(clk, kCFNumberSInt64Type, &val);
+                if (val > 0) snprintf(clockStr, sizeof(clockStr), " @ %.2f GHz", val / 1e9);
+                CFRelease(clk);
+            }
+            IOObjectRelease(service);
+            if (strlen(clockStr) > 0) break;
+        }
+        IOObjectRelease(iter);
     }
+    printf("%s (10)%s [Integrated]\n", name, clockStr);
 }
 #endif
 

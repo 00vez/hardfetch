@@ -83,7 +83,10 @@ void print_cpu_info(void)
         len = sizeof(ncpu);
         sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0);
         logical = ncpu;
-        mhz = 0; // braucht powermetrics / sysctl nicht direct; Best-Effort
+        len = sizeof(mhz);
+        sysctlbyname("hw.cpufrequency", &mhz, &len, NULL, 0);
+        mhz = mhz / 1000000.0; // Hz -> GHz
+        if (mhz < 0.1) mhz = 0;
     }
 #else
     FILE* f = fopen("/proc/cpuinfo", "r");
