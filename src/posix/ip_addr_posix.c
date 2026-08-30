@@ -8,6 +8,12 @@
 #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#ifndef IFF_UP
+#define IFF_UP 0x1
+#endif
+#ifndef IFF_LOOPBACK
+#define IFF_LOOPBACK 0x8
+#endif
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
