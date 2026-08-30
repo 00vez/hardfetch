@@ -24,9 +24,13 @@
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX MAXHOSTNAMELEN
 #endif
+#ifndef __APPLE__
+#else
+#include "posix/apple_smc.h"
+#endif
 #endif
 
-#define VERSION "0.2.3"
+#define VERSION "0.2.4"
 
 static void print_help(void)
 {
@@ -36,13 +40,13 @@ static void print_help(void)
         "Usage: hardfetch [options]\n"
         "\n"
         "Options:\n"
-        "  -n, --net  Show network section (interfaces + public IP)\n"
+        "  -n, --net      Show network section (interfaces + public IP)\n"
+        "  -d, --smc-dump Dump Apple SMC sensors (macOS only)\n"
         "  -v, --version  Print version and exit\n"
         "  -h, --help     Show this help and exit\n"
         "\n"
         "Notes:\n"
         "  Public IP lookup requires internet access.\n"
-        "  x86-64 only.\n"
     );
 }
 
@@ -93,6 +97,14 @@ int main(int argc, char* argv[])
         }
         if (strcmp(argv[i], "--net") == 0 || strcmp(argv[i], "-n") == 0) {
             show_net = 1;
+        }
+        if (strcmp(argv[i], "--smc-dump") == 0 || strcmp(argv[i], "-d") == 0) {
+#ifdef __APPLE__
+            apple_smc_dump(stdout);
+#else
+            fprintf(stderr, "--smc-dump only on macOS\n");
+#endif
+            return 0;
         }
     }
 

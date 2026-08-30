@@ -2,24 +2,31 @@
 #include "../output.h"
 
 #include <stdio.h>
+#include <string.h>
 #if defined(__APPLE__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include "apple_smc.h"
 #endif
+
+static int is_arm64(void) {
+#if defined(__APPLE__)
+    int v = 0; size_t l = sizeof(v);
+    if (sysctlbyname("hw.optional.arm64", &v, &l, NULL, 0) == 0) return v;
+#endif
+    return 0;
+}
 
 void print_cpu_temp_power(double load)
 {
     char detail[128];
     int tempC = -1;
 #if defined(__APPLE__)
-    {
-            int val = 0;
-            const char* keys[] = {"TC0D", "TC0P", "TC0E", "Tp05", "Tp09", "Tp0D", "Tp0b", "Tp01", NULL};
-            for (int i = 0; keys[i]; i++) {
-                if (apple_smc_read_temp(keys[i], &val) == 0 && val > 0) {
-                    tempC = val;
-                    break;
-                }
-            }
+    if (is_arm64()) {
+        apple_smc_cpu_temp(&tempC);
+    } else {
+        const char *keys[] = {"TC0D","TC0P",NULL};
+        for (int i=0; keys[i]; i++) { int v; if (apple_smc_read_temp(keys[i],&v)==0){tempC=v;break;} }
     }
 #else
     FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
@@ -30,7 +37,9 @@ void print_cpu_temp_power(double load)
     }
 #endif
 
-    int pos = snprintf(detail, sizeof(detail), "Load  %.0f%%", load);
+    int pos;
+    if (load >= 0) pos = snprintf(detail, sizeof(detail), "Load  %.1f%%", load);
+    else pos = snprintf(detail, sizeof(detail), "Load  N/A");
     if (tempC >= 0)
         pos += snprintf(detail + pos, sizeof(detail) - pos, "   |  Temp  %d\xc2\xb0""C", tempC);
     else

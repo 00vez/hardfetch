@@ -9,14 +9,34 @@
 #include <time.h>
 
 #if defined(__APPLE__)
-#if defined(__APPLE__)
-typedef unsigned int u_int;
-typedef unsigned char u_char;
-typedef unsigned short u_short;
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#endif
+#include <mach/mach_host.h>
+#include <mach/vm_map.h>
 #include "apple_pmgr.h"
+
+static double cpu_usage_percent(unsigned interval_ms) {
+  natural_t n1=0,n2=0; processor_info_array_t t1=NULL,t2=NULL;
+  mach_msg_type_number_t c1=0,c2=0;
+  if (host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &n1, &t1, &c1)!=KERN_SUCCESS) return -1;
+  usleep(interval_ms*1000);
+  if (host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &n2, &t2, &c2)!=KERN_SUCCESS){
+    vm_deallocate(mach_task_self(),(vm_address_t)t1,c1*sizeof(integer_t)); return -1;
+  }
+  uint64_t b1=0,tot1=0,b2=0,tot2=0;
+  for(natural_t i=0;i<n1 && i<n2;i++){
+    integer_t *p1=t1+i*CPU_STATE_MAX; integer_t *p2=t2+i*CPU_STATE_MAX;
+    uint64_t bb1=p1[CPU_STATE_USER]+p1[CPU_STATE_SYSTEM]+p1[CPU_STATE_NICE];
+    uint64_t tt1=bb1+p1[CPU_STATE_IDLE];
+    uint64_t bb2=p2[CPU_STATE_USER]+p2[CPU_STATE_SYSTEM]+p2[CPU_STATE_NICE];
+    uint64_t tt2=bb2+p2[CPU_STATE_IDLE];
+    b1+=bb1; tot1+=tt1; b2+=bb2; tot2+=tt2;
+  }
+  vm_deallocate(mach_task_self(),(vm_address_t)t1,c1*sizeof(integer_t));
+  vm_deallocate(mach_task_self(),(vm_address_t)t2,c2*sizeof(integer_t));
+  uint64_t dt=tot2-tot1, db=b2-b1;
+  return dt? (double)db/(double)dt*100.0 : -1;
+}
 #endif
 
 static void trim(char* s)
@@ -115,12 +135,17 @@ void print_cpu_info(void)
     }
 
     (void)parse_after;
+    double load = -1;
+#if defined(__APPLE__)
+    load = cpu_usage_percent(200);
+#else
     double s1 = read_load();
     struct timespec ts = { 0, 20 * 1000 * 1000 };
     nanosleep(&ts, NULL);
     double s2 = read_load();
-    (void)s1; /* loadavg via GetSystemTimes; 0% auf M4 bei kurzem Intervall erwartbar */
-    double load = s2;
+    (void)s1;
+    load = s2;
+#endif
 
     char mainLine[320];
     int pos = snprintf(mainLine, sizeof(mainLine), "%s (%d)", name, logical);
