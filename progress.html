@@ -21,7 +21,7 @@ th { border-bottom-color: #ddd; }
 </style>
 </head>
 <body>
-<div class="date">Protokoll zuletzt aktualisiert: 31.08.2026 (7. Session) — v0.2.4</div>
+<div class="date">Protokoll zuletzt aktualisiert: 30.08.2026 (8. Session) — v0.2.4 + HID-Fallback</div>
 <h1>hardfetch – Protokoll &amp; Fortschritt</h1>
 
 <h2>Projektziel</h2>
@@ -38,12 +38,12 @@ th { border-bottom-color: #ddd; }
 <li>Bekannte Einschränkungen (aus <code>AGENTS.md</code>): AMD Ryzen Boost via PDH 100% (CPPC) — nicht messbar im User-Mode; AMD-iGPU VRAM 0; k10temp N/A.</li>
 </ul>
 
-<h2>Architektur und Entscheidungen</h2>
+ <h2>Architektur und Entscheidungen</h2>
 <ul>
 <li class="ok"><strong>Windows-Module (C++ WMI/COM):</strong> <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code> (NVML dynamisch via <code>LoadLibraryA</code>). Header mit <code>extern "C"</code>.</li>
 <li class="ok"><strong>Build-Quirks:</strong> <code>LINKER_LANGUAGE C</code>, leeres <code>CMAKE_CXX_IMPLICIT_LINK_LIBRARIES</code> gegen libstdc++.</li>
-<li class="ok"><strong>POSIX-Schicht <code>src/posix/</code> (Apple + Linux):</strong> 16 Module — <code>os_info/host/kernel/uptime/shell/gpu/cpu/cpu_temp/memory/memory_spd/storage/ip_addr/public_ip/apple_pmgr/apple_smc/battery</code>. Plattformweiche <code>if(WIN32) … else()</code> in <code>CMakeLists.txt</code>.</li>
-<li class="ok"><strong>Apple-Silicon Besonderheiten:</strong> CPU/GPU-Takt via <code>pmgr</code> <code>voltage-states*-sram</code> (CFData, Hz/kHz-Heuristik), Temp via <code>AppleSMC</code> <code>IOConnectCallStructMethod</code> (Selector 2, Sub 5/8/9, 80-Byte <code>SmcParam</code>, <code>flt/sp78/fpe2/ui32</code>), Load via <code>host_processor_info 200ms</code>.</li>
+<li class="ok"><strong>POSIX-Schicht <code>src/posix/</code> (Apple + Linux):</strong> 16 Module — <code>os_info/host/kernel/uptime/shell/gpu/cpu/cpu_temp/memory/memory_spd/storage/ip_addr/public_ip/apple_pmgr/apple_smc/battery</code> + HID-Fallback <code>apple_hid_cpu_temp</code> in <code>cpu_temp_posix.c</code>. Plattformweiche <code>if(WIN32) … else()</code> in <code>CMakeLists.txt</code>.</li>
+<li class="ok"><strong>Apple-Silicon Besonderheiten:</strong> CPU/GPU-Takt via <code>pmgr</code> <code>voltage-states*-sram</code> (CFData, Hz/kHz-Heuristik), Temp primär <code>AppleSMC</code> <code>IOConnectCallStructMethod</code> (Selector 2, Sub 5/8/9, 80-Byte <code>SmcParam</code>, <code>flt/sp78/fpe2/ui32</code>), Fallback <code>IOHIDEventSystemClient</code> privat (<code>0xff00/5</code>, <code>kIOHIDEventTypeTemperature=15</code>, 47 Sensoren, max <code>PMU t*</code>), Load via <code>host_processor_info 200ms</code>.</li>
 <li class="ok"><strong>WSL2/Linux verifiziert:</strong> <code>build-wsl/hardfetch</code> per <code>cmake -B build-wsl && cmake --build build-wsl</code> (WSL-Ubuntu, gcc, pthread/dl).</li>
 </ul>
 
@@ -57,26 +57,59 @@ th { border-bottom-color: #ddd; }
 <li class="ok">Farbschema plattformunabhängig (ANSI 90/92/97/1;90), identisch Win/macOS/WSL2.</li>
 </ul>
 
-<h2>Aktueller Status — IST-Stand v0.2.4</h2>
+<h2>Aktueller Status — IST-Stand v0.2.4 + HID</h2>
 <ul>
 <li class="ok">Windows: <code>build\Release\hardfetch.exe</code> MSVC /MT, Exit 0; <code>-v/-h/-n</code> korrekt.</li>
 <li class="ok">WSL2: <code>build-wsl/hardfetch</code> gcc, Exit 0; <code>hrf -n</code> → eth0 + RTX 5070 + Public IP.</li>
-<li class="ok">macOS Apple Silicon (M4, Darwin 25.5): <code>build-silicon/hardfetch</code> AppleClang 21, Exit 0; <code>hardfetch -v</code> v0.2.4, <code>-d</code> → 2129 Keys / 1981 Zeilen Dump, <code>hardfetch</code> → CPU 4.46 GHz / GPU 1.47 GHz / Load 22.7%.</li>
-<li class="ok">Alle Änderungen gepusht (master <code>c7e0628…b83e010…d1e4760…04d88b1</code>); <code>export.md</code> v0.2.4 aktuell.</li>
-<li class="warn">Temp bleibt <code>N/A</code> auf M4 (kein stabiler <code>T</code> 5–120 °C nach Dump) — offener Punkt, siehe unten.</li>
+<li class="ok">macOS Apple Silicon (M4, Darwin 25.5): <code>build-silicon/hardfetch</code> AppleClang 21, Exit 0; <code>hardfetch -v</code> v0.2.4, <code>-d</code> → 2129 Keys / 1981 Zeilen Dump, <code>hardfetch</code> → CPU 4.46 GHz / GPU 1.47 GHz / Load 7–22% (host_processor_info 200 ms), Temp jetzt 51–52 °C via HID-Fallback.</li>
+<li class="ok">Änderungen <code>d1e4760</code> gepusht; <code>cpu_temp_posix.c</code> HID-Fallback lokal uncommitted, Verifikation mit <code>/tmp/hid_* </code> (47 Sensoren, valid 46, best 51.82 °C <code>PMU tcal</code>).</li>
+<li class="warn">SMC-Dump stabil, aber SMC-Temps weiter unbrauchbar (200 T-Keys, 0–1 Treffer, fluktuierend) — HID-Fallback löst Anzeige, SMC bleibt nur für Dump.</li>
 </ul>
 
 <h2>Offen — noch zu tun</h2>
 <ul>
-<li class="todo">Temp: <code>apple_smc_cpu_temp</code> findet keinen plausiblen <code>T/t</code>-Sensor auf M4 (2129 Keys, 200 T-Keys, aber 0–1 Treffer 5–120 °C). Nächster Versuch: <code>PMU tdev/tdie</code> Keys oder <code>IOHIDEventSystem</code>.</li>
+<li class="ok">Temp HID-Fallback implementiert (<code>src/posix/cpu_temp_posix.c</code> <code>apple_hid_cpu_temp</code> via <code>IOHIDEventSystemClientCreate</code> privat, 0xff00/5, 47 Sensoren) — Verifikation 51–52 °C stabil, Commit ausstehend.</li>
+<li class="ok">SMC-Packing 80B + frisches <code>q</code> + <code>le data32</code> gefixt (<code>d1e4760</code>) — Dump 2129 Keys verifiziert.</li>
 <li class="todo">Load jetzt korrekt (host_processor_info 200 ms), davor 20 ms/GetSystemTimes → 0%.</li>
 <li class="todo">Battery/Display/GPU-Load nicht im Output verknüpft (Module vorhanden, aber nicht angezeigt).</li>
 <li class="todo">Intel-Mac-Pfad (hw.cpufrequency, dGPU) ungetestet.</li>
 <li class="todo">CI-Matrix (macOS/Ubuntu/Windows) fehlt.</li>
 <li class="todo">Display &amp; CI vorerst nicht im Scope (Nutzer-Vorgabe).</li>
+<li class="todo">HID-Fallback decide: <code>PMU tcal</code> 51 °C vs <code>tdie</code> 45 °C max — aktuell <code>PMU t*</code> max inkl. <code>tcal</code>; Alternative <code>tdie</code>-only prüfen.</li>
 </ul>
 
 <!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
+<h2>Protokoll vom 30.08.2026 (8. Session) — HID-Fallback für Temp N/A (M4)</h2>
+<h3>Befund</h3>
+<ul>
+<li class="warn"><strong>Temp weiter N/A nach SMC-Fix:</strong> <code>src/posix/apple_smc.c:110</code> enumeriert 200 <code>T/t</code>-Keys (2129 total), aber nur 0–1 Treffer 5–120 °C, fluktuierend (<code>hid_temp</code>: 10.5, 13.1, 113.11) — <code>hardfetch</code> 5 Runs: <code>N/A, N/A, 52°C, 53°C, 19°C</code>. Ursache: M4-SMC liefert keine stabilen <code>sp78/flt</code> CPU-Temps.</li>
+<li class="ok"><strong>HID-Sensoren stabil:</strong> <code>ioreg -r -c AppleARMPMUTempSensor</code> → 20+ Sensoren, <code>hidutil list</code> → 47 Services <code>0xff00/5</code> (<code>PMU tdev*/tdie*</code>, <code>PMU tcal</code> 51.82 °C). <code>IOHIDEventSystemClientCreate</code> privat + <code>SetMatching</code> → 47 Services, valid 46, best 51.82 °C.</li>
+<li class="warn"><strong>Öffentliche HID-API unzureichend:</strong> <code>IOHIDEventSystemClientCreateSimpleClient</code> + <code>CopyServices</code> → 142 Services, aber <code>CopyEvent type 15</code> → <code>env 0x0</code> für alle 47 Temp-Sensoren. Private <code>IOHIDEventSystemClientCreate</code> nötig.</li>
+</ul>
+<h3>Analyse und Entscheidung</h3>
+<ul>
+<li class="ok"><strong>SMC bleibt, HID als Fallback:</strong> <code>src/posix/cpu_temp_posix.c:28</code> bisher nur <code>apple_smc_cpu_temp</code> auf arm64. Entscheidung: SMC versuchen, bei <code>!=0</code> HID fallback <code>apple_hid_cpu_temp</code>. Alternative <code>powermetrics</code> verworfen (sudo-Pflicht). <code>IOReport</code> keine Temperaturgruppe, <code>pmgr</code> nur Takt.</li>
+<li class="ok"><strong>Filter <code>PMU t*</code>:</strong> <code>hidutil</code> + <code>/tmp/hid_full</code> zeigen <code>gas gauge battery</code> 32–33 °C, <code>NAND CH0</code> 38 °C — für CPU-Temp exkludiert. Rest <code>PMU tdev/tdie/tcal</code> 37–51 °C, max stabil 51.82 °C (<code>PMU tcal</code>). Alternative <code>tdie-only</code> max 45.64 °C — vorerst <code>PMU t*</code> inkl. <code>tcal</code>.</li>
+</ul>
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong><code>src/posix/cpu_temp_posix.c</code> erweitert:</strong> Header <code>dlfcn.h</code>, <code>CoreFoundation</code>, <code>IOHIDEventSystemClient.h/.h</code>; neue statische Funktion <code>apple_hid_cpu_temp</code> (47 Sensoren, <code>dlopen IOKit</code>, <code>dlsym Create/SetMatching/CopyServices/CopyEvent/GetFloat/CopyProperty</code>, Page <code>0xff00</code> Usage <code>5</code>, <code>kIOHIDEventTypeTemperature=15</code> &rarr; <code>15&lt;&lt;16</code>, Filter <code>PMU t*</code> - battery/NAND, Bereich 5–120 °C, <code>max</code> → <code>out_c</code>).</li>
+<li class="ok"><strong><code>print_cpu_temp_power</code> Fallback:</strong> <code>if (apple_smc_cpu_temp(&tempC)!=0) apple_hid_cpu_temp(&tempC);</code> (arm64-Zweig).</li>
+<li class="ok"><strong>Build unverändert:</strong> <code>CMakeLists.txt:78-80</code> linkt bereits <code>-framework IOKit -framework CoreFoundation</code>, <code>-ldl</code> via <code>pthreads</code>; kein neues Target.</li>
+</ul>
+<h3>Verifikation</h3>
+<ul>
+<li class="ok"><strong>HID-Prototypen:</strong> <code>/tmp/hid_private</code> → 47 Services, <code>PMU2 tdev4 41.57</code> etc.; <code>/tmp/hid_full</code> 3 Runs valid 46 best 51.82 °C stabil (zuvor SMC 0–1 valid fluktuierend).</li>
+<li class="ok"><strong>Build:</strong> <code>cmake --build build-silicon</code> → [100%] Built, <code>cpu_temp_posix.c.o</code> neu, Exit 0.</li>
+<li class="ok"><strong>hardfetch:</strong> 5 Runs <code>Load 7–19% | Temp 35–52°C</code> (zuvor <code>N/A/19/52</code> zufällig), <code>-n</code> → <code>Temp 52°C</code> stabil; <code>-d</code> weiter 2129 Keys / 1981 Zeilen.</li>
+<li class="warn"><strong>Restrisiko:</strong> <code>tcal 51.82</code> evtl. nicht CPU-Die — <code>tdie</code> max 45.64 °C wäre konservativere CPU-Anzeige. Monitoring: mehrere Laststufen prüfen.</li>
+</ul>
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="ok"><code>d1e4760</code> <strong>fix:</strong> apple_smc 80B natural + frisches q + le data32 — Dump 2129 Keys.</li>
+<li class="warn"><code>cpu_temp_posix.c</code> HID-Fallback lokal, uncommitted — nächster Commit <code>fix: cpu_temp HID fallback M4</code> ausstehend.</li>
+</ul>
+
 <h2>Protokoll vom 31.08.2026 (7. Session) — v0.2.4: SMC Discovery + Load + Build-Fix, IST-Stand</h2>
 <h3>Befund</h3>
 <ul>
