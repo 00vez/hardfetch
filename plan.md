@@ -1,4 +1,6 @@
-# hardfetch — Finaler Implementierungsplan
+# hardfetch — Implementierungsplan (realisiert v0.2.4, Stand 31.08.2026)
+
+> Original 0.1-Plan (Windows-only) unten unverändert — darüber IST-Stand: POSIX-Port via `src/posix/`, `apple_pmgr`/`apple_smc`, WSL/macOS verifiziert. Für Historie `progress.html`.
 
 ## Projektprinzipien (Non-Negotiable)
 
@@ -6,7 +8,7 @@
 |---------|-----------|
 | **Neubau** | Kein Fastfetch-Fork, reiner Eigenbau. `fork/` nur als Referenz. |
 | **Sprache** | C11 für Core + Module, **C++ nur für WMI/COM Fallback** (`*.cpp`) |
-| **Plattform** | Windows 10/11 x64 only — kein Linux, kein macOS |
+| **Plattform** | Windows 10/11 x64 + WSL2/Linux + macOS arm64 (realisiert v0.2.4) |
 | **Portabilität** | MSVC **/MT** statisch linken, keine VC++ Redist nötig |
 | **GPU** | NVIDIA only via **dynamisches Laden** von `nvml.dll` |
 | **Admin** | OK für WMI/SPD/NVMe Temp — Tool zeigt was geht, sonst `N/A` |
