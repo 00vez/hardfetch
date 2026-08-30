@@ -15,8 +15,8 @@ void print_cpu_temp_power(double load)
         int val = 0;
         const char* keys[] = {"TC0D", "TC0P", "TC0E", "Tp05", "Tp09", "Tp0D", "Tp0b", "Tp01", NULL};
         for (int i = 0; keys[i]; i++) {
-            if (apple_smc_read_int(keys[i], &val) == 0 && val > 0) {
-                tempC = val / 100; /* Apple SMC meist Hunderter */
+            if (apple_smc_read_temp(keys[i], &val) == 0 && val > 0) {
+                tempC = val;
                 break;
             }
         }
