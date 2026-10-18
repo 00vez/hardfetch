@@ -106,7 +106,12 @@ void os_collect(hf_state* s)
        reports "Windows 11 Pro 25H2": product and version as separate fields.
        PRETTY_NAME would repeat the version inside the product. */
     os_release_value("NAME", s->os_product, sizeof(s->os_product));
-    os_release_value("VERSION_ID", s->os_display_version, sizeof(s->os_display_version));
+    /* VERSION rather than VERSION_ID: on Debian VERSION_ID is just "13"
+       while VERSION is "13.7 (trixie)", which is what fastfetch shows. */
+    os_release_value("VERSION", s->os_display_version, sizeof(s->os_display_version));
+    if (s->os_display_version[0] == 0)
+        os_release_value("VERSION_ID", s->os_display_version,
+                         sizeof(s->os_display_version));
     snprintf(s->os_build_str, sizeof(s->os_build_str), "%.*s",
              (int)sizeof(s->os_build_str) - 1, haveUname ? u.release : "");
 
