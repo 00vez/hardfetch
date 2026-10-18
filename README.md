@@ -93,6 +93,20 @@ are implemented and were checked against fixture sysfs trees.
 
 macOS is not covered by this release.
 
+### Package managers
+
+```powershell
+# scoop, from the manifest in this repository
+scoop install https://raw.githubusercontent.com/00vez/hardfetch/master/packaging/scoop/hardfetch.json
+```
+```bash
+# homebrew, from a tap that hosts the formula in packaging/brew
+brew install 00vez/hardfetch/hardfetch
+```
+
+The winget manifest is in `packaging/winget/00vez.hardfetch.yaml`. Putting it
+in a package source still needs an upstream pull request, which is not done.
+
 ## Runtime dependencies
 
 The executable itself has none, but it talks to services the operating
