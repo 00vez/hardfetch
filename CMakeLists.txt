@@ -88,7 +88,6 @@ else()
         src/posix/ip_addr_posix.c
         src/posix/public_ip_posix.c
     )
-    target_compile_definitions(hardfetch PRIVATE HF_VERSION="${PROJECT_VERSION}")
     target_link_libraries(hardfetch PRIVATE pthread dl)
     if(APPLE)
         target_link_libraries(hardfetch PRIVATE "-framework CoreFoundation" "-framework IOKit")

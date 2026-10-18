@@ -32,13 +32,10 @@
 #endif
 #endif
 
-/* The POSIX CLI and layout are the frozen 0.2.4 ones, but this binary is
-   built from the current tree, so it reports the real project version.
-   HF_VERSION comes from CMake. */
-#ifndef HF_VERSION
-#define HF_VERSION "0.0.0"
-#endif
-#define VERSION HF_VERSION
+/* Deliberately NOT the project version. The POSIX CLI, layout and collectors
+   are the frozen 0.2.4 ones, so this binary must not call itself 3.3 even
+   though it is built from the 3.3 tree. Parity is planned for 0.4.0. */
+#define VERSION "0.2.4"
 
 static void print_help(void)
 {
