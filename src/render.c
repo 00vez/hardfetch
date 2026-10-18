@@ -130,11 +130,7 @@ static void render_cpu(const hf_state* s)
     print_row_green("CPU", s->cpu_name);
 
     fmt_freq(clock, sizeof(clock), s->cpu_freq_mhz);
-    {
-        char pct[16];
-        fmt_pct(pct, sizeof(pct), s->cpu_load);
-        snprintf(load, sizeof(load), "%s Load", pct);
-    }
+    fmt_load(load, sizeof(load), s->cpu_load, "Load");
     if (s->cpu_temp_c > 0)
         snprintf(temp, sizeof(temp), "%d %sC", s->cpu_temp_c, DEGREE);
     else
@@ -166,12 +162,13 @@ static void render_cpu(const hf_state* s)
 
 static void render_memory(const hf_state* s)
 {
-    char amounts[48], pct[16], line[96], detail[96];
+    char amounts[48], pct[32], line[96], detail[96];
     char speed[32] = "";
     char cas[16] = "";
 
     fmt_bytes_pair(amounts, sizeof(amounts), s->ram_used, s->ram_total);
-    fmt_pct(pct, sizeof(pct), s->ram_total ? (double)s->ram_used / (double)s->ram_total : 0.0);
+    fmt_load(pct, sizeof(pct),
+             s->ram_total ? (double)s->ram_used / (double)s->ram_total : 0.0, NULL);
     join_fields(line, sizeof(line), amounts, pct, NULL);
     print_row("RAM", line);
 
@@ -214,7 +211,7 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
 
     {
         char load[24], temp[24], power[16], line[96];
-        snprintf(load, sizeof(load), "%u%% Load", g->load_pct);
+        fmt_load(load, sizeof(load), (double)g->load_pct / 100.0, "Load");
         snprintf(temp, sizeof(temp), "%u %sC", g->temp_c, DEGREE);
         snprintf(power, sizeof(power), "%u W", g->power_w);
         join_fields(line, sizeof(line), load, temp, power);
@@ -269,11 +266,11 @@ static void render_gpu(const hf_state* s)
 
 static void render_disk(const hf_state* s)
 {
-    char amounts[48], pct[16], line[96];
+    char amounts[48], pct[32], line[96];
 
     if (s->disk_total == 0) return;
     fmt_bytes_pair(amounts, sizeof(amounts), s->disk_used, s->disk_total);
-    fmt_pct(pct, sizeof(pct), (double)s->disk_used / (double)s->disk_total);
+    fmt_load(pct, sizeof(pct), (double)s->disk_used / (double)s->disk_total, NULL);
     join_fields(line, sizeof(line), amounts, pct, NULL);
     print_row("Disk", line);
 }

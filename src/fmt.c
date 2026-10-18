@@ -77,3 +77,45 @@ void fmt_uptime(char* out, size_t n, unsigned long long seconds)
     else
         snprintf(out, n, "%llus", seconds);
 }
+
+/* ---------- utilisation severity ---------- */
+
+hf_load_level fmt_load_level(double fraction)
+{
+    if (fraction < 0.0) return HF_LOAD_NORMAL;
+    if (fraction >= 0.95) return HF_LOAD_DARK_RED;
+    if (fraction >= 0.85) return HF_LOAD_LIGHT_RED;
+    if (fraction >= 0.70) return HF_LOAD_ORANGE;
+    if (fraction >= 0.50) return HF_LOAD_LIGHT_ORANGE;
+    return HF_LOAD_NORMAL;
+}
+
+/* 256-colour cube: amber -> orange -> salmon -> deep red. */
+static const char COLOURS[][12] = {
+    "",                  /* normal: inherit the surrounding colour */
+    "\x1b[38;5;215m",   /* #FFAF00 light orange */
+    "\x1b[38;5;208m",   /* #FF8700 orange      */
+    "\x1b[38;5;203m",   /* #FF5F5F light red   */
+    "\x1b[38;5;88m"     /* #870000 dark red    */
+};
+
+const char* fmt_load_colour(hf_load_level level)
+{
+    if (level < 0 || level > HF_LOAD_DARK_RED) level = HF_LOAD_NORMAL;
+    return COLOURS[level];
+}
+
+void fmt_load(char* out, size_t n, double fraction, const char* suffix)
+{
+    double p = fraction * 100.0;
+    const char* colour;
+
+    if (p < 0.0) p = 0.0;
+    if (p > 100.0) p = 100.0;
+
+    colour = fmt_load_colour(fmt_load_level(fraction));
+    if (colour[0] == 0)
+        snprintf(out, n, "%.0f%% %s", p, suffix ? suffix : "");
+    else
+        snprintf(out, n, "%s%.0f%% %s\x1b[0m", colour, p, suffix ? suffix : "");
+}
