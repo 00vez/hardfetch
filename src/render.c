@@ -335,45 +335,39 @@ static void render_network(const hf_state* s)
     char label[40];
 
     if (s->ip_local[0]) {
-        static const char WRAPPER[] = "IP ()";
-        int wrapLen = (int)strlen(WRAPPER);
-        int width = (int)strlen(s->ip_label);
+        snprintf(label, sizeof(label), "IP (%s)", s->ip_label);
+        print_row(label, s->ip_local);
+    }
+
+    if (!s->options_all)
+        return;
+
+    snprintf(label, sizeof(label), "IP (Public)");
+    print_row(label, s->ip_public[0] ? s->ip_public : "N/A");
+
+    /* The remaining adapters follow the public IP, names right aligned on
+       the longest of them so their addresses share a column. */
+    if (s->ip_local[0] && s->ip_iface_count > 0) {
+        int width = 0;
         int i;
 
-        /* All interfaces share one name column, right aligned on the longest
-           name, so every address starts in the same column. The label row
-           carries the "IP (" ... ")" wrapper and the detail rows carry the
-           OUTPUT_COLUMN indent; both are folded into the label name width so
-           the address columns line up. */
         for (i = 0; i < s->ip_iface_count; i++) {
             int len = (int)strlen(s->ip_ifaces[i].label);
             if (len > width) width = len;
         }
 
-        snprintf(label, sizeof(label), "IP (%*s)",
-                 width + OUTPUT_COLUMN - wrapLen, s->ip_label);
-        print_row(label, s->ip_local);
+        for (i = 0; i < s->ip_iface_count; i++) {
+            char line[192];
+            int len = (int)strlen(s->ip_ifaces[i].label);
+            int used;
 
-        if (s->options_all) {
-            for (i = 0; i < s->ip_iface_count; i++) {
-                char line[192];
-                int len = (int)strlen(s->ip_ifaces[i].label);
-                snprintf(line, sizeof(line), "%*s%s",
-                         width - len, "", s->ip_ifaces[i].label);
-                {
-                    int used = (int)strlen(line);
-                    snprintf(line + used, sizeof(line) - (size_t)used,
-                             "  %s", s->ip_ifaces[i].value);
-                }
-                print_row_detail(line);
-            }
+            snprintf(line, sizeof(line), "%*s%s", width - len, "",
+                     s->ip_ifaces[i].label);
+            used = (int)strlen(line);
+            snprintf(line + used, sizeof(line) - (size_t)used,
+                     "  %s", s->ip_ifaces[i].value);
+            print_row_detail(line);
         }
-    }
-
-    if (s->options_all) {
-        snprintf(label, sizeof(label), "IP (Public)");
-        if (s->ip_public[0]) print_row(label, s->ip_public);
-        else print_row(label, "N/A");
     }
 }
 
