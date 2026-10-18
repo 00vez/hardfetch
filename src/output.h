@@ -27,6 +27,10 @@ void output_clear_screen(void);
 void output_hide_cursor(void);
 void output_show_cursor(void);
 
+/* Non-zero once q, Esc or Ctrl+C has been seen on the console. Used by --live
+   to leave the loop without relying on a signal handler. */
+int  output_quit_requested(void);
+
 const char* output_separator(void);                         /* U+00B7 MIDDLE DOT */
 
 /* --- legacy layout, kept for the frozen POSIX build (see src/posix/*) --- */

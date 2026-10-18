@@ -62,22 +62,80 @@ void print_header(const char* text)
     printf("\x1b[1;92m%s\x1b[0m" OUTPUT_NL, text ? text : "");
 }
 
+/* The screen control below uses the Win32 console API rather than escape
+   sequences. Escape sequences are not honoured on every console setup, which
+   left stale text from the previous frame on screen. */
+static HANDLE console_out(void)
+{
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (h == INVALID_HANDLE_VALUE) return NULL;
+    return h;
+}
+
 void output_clear_screen(void)
 {
-    fputs("\x1b[H\x1b[2J", stdout);
+    HANDLE h = console_out();
+    CONSOLE_SCREEN_BUFFER_INFO info;
+
+    if (h && GetConsoleScreenBufferInfo(h, &info)) {
+        COORD topLeft = { 0, 0 };
+        /* Only the visible window: filling the whole buffer would walk the
+           entire scrollback on every tick. */
+        SHORT width = (SHORT)(info.srWindow.Right - info.srWindow.Left + 1);
+        SHORT rows = (SHORT)(info.dwCursorPosition.Y + 1);
+        DWORD written;
+
+        if (rows > 0) {
+            FillConsoleOutputCharacterA(h, ' ', (DWORD)width * (DWORD)rows,
+                                         topLeft, &written);
+            FillConsoleOutputAttribute(h, info.wAttributes,
+                                       (DWORD)width * (DWORD)rows, topLeft, &written);
+        }
+        SetConsoleCursorPosition(h, topLeft);
+        fflush(stdout);
+        return;
+    }
+    fputs("[H[2J", stdout);
     fflush(stdout);
 }
 
-void output_hide_cursor(void)
+static void set_cursor_visible(int visible)
 {
-    fputs("\x1b[?25l", stdout);
-    fflush(stdout);
+    HANDLE h = console_out();
+    CONSOLE_CURSOR_INFO info;
+
+    if (!h || !GetConsoleCursorInfo(h, &info)) return;
+    info.bVisible = visible ? TRUE : FALSE;
+    SetConsoleCursorInfo(h, &info);
 }
 
-void output_show_cursor(void)
+void output_hide_cursor(void) { set_cursor_visible(0); }
+void output_show_cursor(void) { set_cursor_visible(1); }
+
+int output_quit_requested(void)
 {
-    fputs("\x1b[?25h", stdout);
-    fflush(stdout);
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    INPUT_RECORD rec;
+    DWORD read = 0;
+
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    if (!PeekConsoleInput(h, &rec, 1, &read) || read == 0) return 0;
+
+    if (!ReadConsoleInput(h, &rec, 1, &read) || read == 0) return 0;
+
+    if (rec.EventType == KEY_EVENT && rec.Event.KeyEvent.bKeyDown) {
+        switch (rec.Event.KeyEvent.wVirtualKeyCode) {
+            case 'Q': case 'q': case VK_ESCAPE:
+                return 1;
+            case 'C':   /* Ctrl+C arrives as a key event without a console host */
+                if (rec.Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))
+                    return 1;
+                break;
+            default:
+                break;
+        }
+    }
+    return 0;
 }
 
 /* ---------------- legacy layout (frozen POSIX build) ---------------- */

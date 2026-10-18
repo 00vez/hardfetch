@@ -283,6 +283,10 @@ void gpu_collect(hf_state* s)
 
     debug_begin("gpu");
 
+    /* Re-collected on every --live tick: without this the list grows by one
+       entry per adapter per tick and the same card is printed repeatedly. */
+    s->gpu_count = 0;
+
     gdi = LoadLibraryA("gdi32.dll");
     if (!gdi) {
         debug_log("gdi32.dll load failed: %s", debug_win32(GetLastError()));

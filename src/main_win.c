@@ -273,8 +273,12 @@ int main(int argc, char** argv)
 
         while (!g_stop) {
             ULONGLONG now = GetTickCount64();
+            DWORD remaining;
+            if (output_quit_requested()) { g_stop = 1; break; }
             if (now >= deadline) break;
-            Sleep(now + 50 >= deadline ? (DWORD)(deadline - now) : 50);
+            remaining = now + 50 >= deadline ? (DWORD)(deadline - now) : 50;
+            /* Short slices so q is noticed within a fraction of the interval. */
+            Sleep(remaining < 50 ? remaining : 50);
         }
         if (g_stop) break;
         collect_live(&s);
