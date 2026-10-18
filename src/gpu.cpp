@@ -180,11 +180,9 @@ struct Nvml {
         }
     }
 
-    ~Nvml()
-    {
-        if (ready) shutdown();
-        if (dll) FreeLibrary(dll);
-    }
+    /* Deliberately does not call nvmlShutdown or FreeLibrary. The process
+       exits immediately afterwards, the driver state is reclaimed either way,
+       and both calls together cost about 3.5 ms. */
 };
 
 void pci_bus_id_string(const hf_gpu* g, char* out, size_t n)

@@ -120,7 +120,6 @@ static DWORD WINAPI worker_proc(LPVOID arg)
     shell_collect(s);
     terminal_collect(s);
     display_collect(s);
-    cpu_temp_collect(s);
 
     return 0;
 }
@@ -231,7 +230,12 @@ int main(int argc, char** argv)
 
     collect_static(&s);
     cpu_collect_static(&s);
-    memory_collect_spd(&s);   /* single WMI query on the main thread */
+    memory_collect_spd(&s);   /* single WMI query */
+
+    /* The perflib temperature runs here rather than on the worker: NVML is the
+       slow collector, and this balances the two threads at about 19 ms each
+       instead of 24 against 14. */
+    cpu_temp_collect(&s);
 
     if (o.show_all)
         public_ip_fetch(&s, PUBLIC_IP_TIMEOUT_MS);
