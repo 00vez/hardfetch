@@ -8,7 +8,7 @@ ReleaseDate: 2026-10-18
 Installers:
 - Architecture: x64
   InstallerUrl: https://github.com/00vez/hardfetch/releases/download/3.3/hardfetch.exe
-  InstallerSha256: 9c1696ce67a0b3bb51b57bceef31c1d78ad075b6f9deef1c2206449f6b0b677d
+  InstallerSha256: 48749b51570af186c59cc52c91f10530305efb66a93864c5d215b111591d93da
   NestedInstallerType: portable
   NestedInstallerFiles:
   - RelativeFilePath: hardfetch.exe

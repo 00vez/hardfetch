@@ -2,7 +2,7 @@ class Hardfetch < Formula
   desc "Compact system info tool, neofetch style, in C"
   homepage "https://github.com/00vez/hardfetch"
   url "https://github.com/00vez/hardfetch/releases/download/3.3/hardfetch"
-  sha256 "64bb530cd1450a34aa0c532a4e9c283d01006032536ef7e7c57d098f374460dc"
+  sha256 "c3763b30e01206396b1fb1ce2bff89cac0a65302e9bd4a9b8eb21046fc23735f"
   license "MIT"
   version "3.3"
 
