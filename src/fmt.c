@@ -119,3 +119,26 @@ void fmt_load(char* out, size_t n, double fraction, const char* suffix)
     else
         snprintf(out, n, "%s%.0f%% %s\x1b[0m", colour, p, suffix ? suffix : "");
 }
+
+/* ---------- temperature severity ---------- */
+
+hf_temp_level fmt_temp_level(int celsius)
+{
+    if (celsius >= 90) return HF_TEMP_CRITICAL;
+    if (celsius >= 80) return HF_TEMP_VERY_HOT;
+    if (celsius >= 70) return HF_TEMP_HOT;
+    if (celsius >= 60) return HF_TEMP_WARM;
+    return HF_TEMP_COOL;
+}
+
+void fmt_temp(char* out, size_t n, int celsius)
+{
+    /* U+00B0 DEGREE SIGN */
+    static const char DEGREE[3] = { (char)0xC2u, (char)0xB0u, 0 };
+    const char* colour = fmt_load_colour((hf_load_level)fmt_temp_level(celsius));
+
+    if (colour[0] == 0)
+        snprintf(out, n, "%d %sC", celsius, DEGREE);
+    else
+        snprintf(out, n, "%s%d %sC[0m", colour, celsius, DEGREE);
+}

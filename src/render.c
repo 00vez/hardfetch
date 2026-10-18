@@ -39,9 +39,6 @@ static int join_fields(char* out, size_t n, const char* a, const char* b, const 
     return used;
 }
 
-/* U+00B0 DEGREE SIGN */
-static const char DEGREE[] = { (char)0xC2u, (char)0xB0u, 0 };
-
 static void render_header(void)
 {
     char user[128] = "user";
@@ -132,7 +129,7 @@ static void render_cpu(const hf_state* s)
     fmt_freq(clock, sizeof(clock), s->cpu_freq_mhz);
     fmt_load(load, sizeof(load), s->cpu_load, "Load");
     if (s->cpu_temp_c > 0)
-        snprintf(temp, sizeof(temp), "%d %sC", s->cpu_temp_c, DEGREE);
+        fmt_temp(temp, sizeof(temp), s->cpu_temp_c);
     else
         temp[0] = 0;
 
@@ -212,7 +209,7 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
     {
         char load[24], temp[24], power[16], line[96];
         fmt_load(load, sizeof(load), (double)g->load_pct / 100.0, "Load");
-        snprintf(temp, sizeof(temp), "%u %sC", g->temp_c, DEGREE);
+        fmt_temp(temp, sizeof(temp), (int)g->temp_c);
         snprintf(power, sizeof(power), "%u W", g->power_w);
         join_fields(line, sizeof(line), load, temp, power);
         print_row_detail(line);
@@ -232,8 +229,17 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
             snprintf(mem, sizeof(mem), "Memory %s", tmp);
         }
 
-        snprintf(line, sizeof(line), "VRAM %s", vram);
-        print_row_detail(line);
+        {
+            char used[32] = "";
+            fmt_load(used, sizeof(used),
+                     (double)g->vram_used / (double)g->vram_total, NULL);
+            join_fields(line, sizeof(line), vram, used, NULL);
+        }
+        {
+            char vramLine[96];
+            snprintf(vramLine, sizeof(vramLine), "VRAM %s", line);
+            print_row_detail(vramLine);
+        }
 
         if (core[0] || mem[0]) {
             join_fields(line, sizeof(line), core, mem, NULL);
@@ -329,13 +335,36 @@ static void render_network(const hf_state* s)
     char label[40];
 
     if (s->ip_local[0]) {
-        snprintf(label, sizeof(label), "IP (%s)", s->ip_label);
+        static const char WRAPPER[] = "IP ()";
+        int wrapLen = (int)strlen(WRAPPER);
+        int width = (int)strlen(s->ip_label);
+        int i;
+
+        /* All interfaces share one name column, right aligned on the longest
+           name, so every address starts in the same column. The label row
+           carries the "IP (" ... ")" wrapper and the detail rows carry the
+           OUTPUT_COLUMN indent; both are folded into the label name width so
+           the address columns line up. */
+        for (i = 0; i < s->ip_iface_count; i++) {
+            int len = (int)strlen(s->ip_ifaces[i].label);
+            if (len > width) width = len;
+        }
+
+        snprintf(label, sizeof(label), "IP (%*s)",
+                 width + OUTPUT_COLUMN - wrapLen, s->ip_label);
         print_row(label, s->ip_local);
+
         if (s->options_all) {
-            for (int i = 0; i < s->ip_iface_count; i++) {
-                char line[96];
-                snprintf(line, sizeof(line), "%s  %s",
-                         s->ip_ifaces[i].label, s->ip_ifaces[i].value);
+            for (i = 0; i < s->ip_iface_count; i++) {
+                char line[192];
+                int len = (int)strlen(s->ip_ifaces[i].label);
+                snprintf(line, sizeof(line), "%*s%s",
+                         width - len, "", s->ip_ifaces[i].label);
+                {
+                    int used = (int)strlen(line);
+                    snprintf(line + used, sizeof(line) - (size_t)used,
+                             "  %s", s->ip_ifaces[i].value);
+                }
                 print_row_detail(line);
             }
         }

@@ -9,7 +9,10 @@
 /* ASCII on purpose: the U+00B7 middle dot did not render in every console
    configuration. */
 static const char SEP[] = "|";
-static const char INDENT[] = "             "; /* OUTPUT_COLUMN spaces */
+/* Built from OUTPUT_COLUMN so the detail indent can never drift away from
+   the value column. */
+#define INDENT_STR "             "
+static const char INDENT[] = INDENT_STR;
 
 const char* output_separator(void)
 {

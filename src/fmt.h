@@ -32,6 +32,19 @@ const char* fmt_load_colour(hf_load_level level);
 /* "<colour><pct>% <suffix><reset>"; suffix may be 0. */
 void fmt_load(char* out, size_t n, double fraction, const char* suffix);
 
+/* Heat ladder. Same five steps as the utilisation ladder so that a warm
+   part and a busy part read the same way. */
+typedef enum {
+    HF_TEMP_COOL = 0,
+    HF_TEMP_WARM,
+    HF_TEMP_HOT,
+    HF_TEMP_VERY_HOT,
+    HF_TEMP_CRITICAL
+} hf_temp_level;
+
+hf_temp_level fmt_temp_level(int celsius);
+void fmt_temp(char* out, size_t n, int celsius);
+
 /* MHz below 1000 stays in MHz, above becomes GHz with 2 decimals. */
 void fmt_freq(char* out, size_t n, unsigned int mhz);
 
