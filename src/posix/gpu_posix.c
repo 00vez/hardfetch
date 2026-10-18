@@ -14,6 +14,12 @@
 
 #include <dlfcn.h>
 #include <dirent.h>
+
+/* Root of the DRM sysfs tree, a macro only so a test build can point it at
+   a fixture. */
+#ifndef HF_DRM_ROOT
+#define HF_DRM_ROOT "/sys/class/drm"
+#endif
 #include <ctype.h>
 
 /* Minimal NVML, same signatures the Windows collector uses. */
@@ -227,10 +233,10 @@ static int read_kb(const char* path, unsigned long long* out)
    adapter still gets a name and a memory figure. */
 static void collect_drm(hf_state* s)
 {
-    DIR* d = opendir("/sys/class/drm");
+    DIR* d = opendir(HF_DRM_ROOT);
 
     if (!d) {
-        debug_log("no /sys/class/drm");
+        debug_log("no " HF_DRM_ROOT);
         return;
     }
 
@@ -248,8 +254,9 @@ static void collect_drm(hf_state* s)
             if (!isdigit((unsigned char)*p)) continue;
 
             {
-                char path[256];
-                snprintf(path, sizeof(path), "/sys/class/drm/%s/device/vendor", e->d_name);
+                char path[512];
+                snprintf(path, sizeof(path), HF_DRM_ROOT "/%.*s/device/vendor",
+                         (int)sizeof(e->d_name), e->d_name);
                 if (read_hex(path, &vid) != 0) continue;
                 if (vid == 0x10DE) continue;   /* already covered through NVML */
             }
@@ -258,31 +265,29 @@ static void collect_drm(hf_state* s)
             g->vendor_id = vid;
 
             {
-                char path[256];
-                snprintf(path, sizeof(path), "/sys/class/drm/%s/device/device", e->d_name);
+                char path[512];
+                snprintf(path, sizeof(path), HF_DRM_ROOT "/%.*s/device/device",
+                         (int)sizeof(e->d_name), e->d_name);
                 (void)read_hex(path, &did);
                 g->device_id = did;
             }
             {
-                char path[256];
-                snprintf(path, sizeof(path), "/sys/class/drm/%s/device/uevent", e->d_name);
-                (void)path;
-            }
-            {
-                char path[256];
-                snprintf(path, sizeof(path), "/sys/class/drm/%s/device/mem_info_vram_total", e->d_name);
+                char path[512];
+                snprintf(path, sizeof(path), HF_DRM_ROOT "/%.*s/device/mem_info_vram_total",
+                         (int)sizeof(e->d_name), e->d_name);
                 if (read_kb(path, &mem) == 0 && mem > 0)
                     g->vram_total = mem * 1024ULL;
             }
             if (g->vram_total == 0) {
-                char path[256];
-                snprintf(path, sizeof(path), "/sys/class/drm/%s/device/mem_info_gtt_total", e->d_name);
+                char path[512];
+                snprintf(path, sizeof(path), HF_DRM_ROOT "/%.*s/device/mem_info_gtt_total",
+                         (int)sizeof(e->d_name), e->d_name);
                 if (read_kb(path, &mem) == 0 && mem > 0)
                     g->vram_total = mem * 1024ULL;
             }
 
-            snprintf(g->name, sizeof(g->name), "%s %s (PCI %04X:%04X)",
-                     vendor_name(vid), "", vid, did);
+            snprintf(g->name, sizeof(g->name), "%s Graphics (PCI %04X:%04X)",
+                     vendor_name(vid), vid, did);
             haveName = 1;
 
             /* An Intel or AMD part behind the same PCI id as an NVML entry is

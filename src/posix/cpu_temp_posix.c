@@ -4,6 +4,12 @@
 
 #include <dirent.h>
 
+/* Root of the thermal sysfs tree. A macro only so a test build can point it
+   at a fixture; the default is the real path. */
+#ifndef HF_THERMAL_ROOT
+#define HF_THERMAL_ROOT "/sys/class/thermal"
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #if defined(__APPLE__)
@@ -19,13 +25,15 @@ typedef unsigned short u_short;
 #include "apple_smc.h"
 #endif
 
-static int is_arm64(void) {
 #if defined(__APPLE__)
-    int v = 0; size_t l = sizeof(v);
+static int is_arm64(void)
+{
+    int v = 0;
+    size_t l = sizeof(v);
     if (sysctlbyname("hw.optional.arm64", &v, &l, NULL, 0) == 0) return v;
-#endif
     return 0;
 }
+#endif
 
 #if defined(__APPLE__)
 static int apple_hid_cpu_temp(int *out_c) {
@@ -108,18 +116,19 @@ static int read_temperature(void)
     /* The thermal zones are numbered and zone 0 is not always the CPU:
        pick the one whose type says so. */
     {
-        DIR* d = opendir("/sys/class/thermal");
+        DIR* d = opendir(HF_THERMAL_ROOT);
         if (d) {
             struct dirent* e;
             while ((e = readdir(d)) != NULL) {
-                char path[320];
+                char path[512];
                 char type[64] = {0};
                 FILE* f;
                 long milli = 0;
                 int isCpu;
 
                 if (strncmp(e->d_name, "thermal_zone", 12) != 0) continue;
-                snprintf(path, sizeof(path), "/sys/class/thermal/%s/type", e->d_name);
+                snprintf(path, sizeof(path), HF_THERMAL_ROOT "/%.*s/type",
+                         (int)sizeof(e->d_name), e->d_name);
                 f = fopen(path, "r");
                 if (f) {
                     if (fgets(type, sizeof(type), f))
@@ -130,7 +139,8 @@ static int read_temperature(void)
                          strstr(type, "soc_thermal"));
                 if (!isCpu) continue;
 
-                snprintf(path, sizeof(path), "/sys/class/thermal/%s/temp", e->d_name);
+                snprintf(path, sizeof(path), HF_THERMAL_ROOT "/%.*s/temp",
+                         (int)sizeof(e->d_name), e->d_name);
                 f = fopen(path, "r");
                 if (!f) continue;
                 if (fscanf(f, "%ld", &milli) == 1) tempC = (int)(milli / 1000);
@@ -141,7 +151,7 @@ static int read_temperature(void)
         }
     }
     if (tempC <= 0) {
-        FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+        FILE* f = fopen(HF_THERMAL_ROOT "/thermal_zone0/temp", "r");
         if (f) {
             long milli = 0;
             if (fscanf(f, "%ld", &milli) == 1) tempC = (int)(milli / 1000);

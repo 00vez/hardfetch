@@ -82,11 +82,14 @@ differs is only what each platform can read:
 | display mode | QueryDisplayConfig | `/sys/class/drm/*/modes` |
 | monitor name and size | EDID in the registry | EDID in `/sys/class/drm/*/edid` |
 | CPU temperature | perflib thermal zone provider | `/sys/class/thermal` |
-| RAM speed and CAS | WMI | needs privileged SPD access |
+| RAM speed and CAS | WMI | dmidecode, needs privileges |
 | GPU | D3DKMT plus NVML | sysfs plus NVML |
 
-A field the platform cannot supply is left out rather than guessed, so the
-Linux view is shorter than the Windows one on the same machine.
+A field the platform cannot supply is left out rather than guessed. On WSL
+the Linux view is shorter than the Windows one on the same machine: no
+thermal zone, no DRM connector and no `/proc/net/thermal_zone*`, so the CPU
+temperature, the second GPU and the display row are absent there. All three
+are implemented and were checked against fixture sysfs trees.
 
 macOS is not covered by this release.
 
