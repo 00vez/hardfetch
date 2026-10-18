@@ -345,8 +345,10 @@ static void render_network(const hf_state* s)
     snprintf(label, sizeof(label), "IP (Public)");
     print_row(label, s->ip_public[0] ? s->ip_public : "N/A");
 
-    /* The remaining adapters follow the public IP, names right aligned on
-       the longest of them so their addresses share a column. */
+    /* The remaining adapters follow the public IP. The block itself starts in
+       the value column; inside it the names are right aligned on the longest
+       one so every address lands in the same column. ip_collect already put
+       them in alphabetical order. */
     if (s->ip_local[0] && s->ip_iface_count > 0) {
         int width = 0;
         int i;

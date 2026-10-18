@@ -45,6 +45,11 @@ static void shorten_label(const wchar_t* friendly, const wchar_t* description,
     if (!out[0]) snprintf(out, outLen, "Net");
 }
 
+static int compare_iface(const void* a, const void* b)
+{
+    return _stricmp(((const Iface*)a)->label, ((const Iface*)b)->label);
+}
+
 static int collect_ipv4(IP_ADAPTER_ADDRESSES* buf, Iface* out, int max)
 {
     int count = 0;
@@ -129,6 +134,11 @@ void ip_collect(hf_state* s, int show_all)
 
     count = collect_ipv4(buf, ifaces, 16);
     free(buf);
+
+    /* The remaining adapters are listed alphabetically; entry 0 stays the
+       best-scoring one because it is the primary interface. */
+    if (count > 2)
+        qsort(ifaces + 1, (size_t)(count - 1), sizeof(ifaces[0]), compare_iface);
 
     if (count == 0) {
         debug_log("no operational IPv4 adapter with an address");
