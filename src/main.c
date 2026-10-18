@@ -32,7 +32,13 @@
 #endif
 #endif
 
-#define VERSION "0.2.4"
+/* The POSIX CLI and layout are the frozen 0.2.4 ones, but this binary is
+   built from the current tree, so it reports the real project version.
+   HF_VERSION comes from CMake. */
+#ifndef HF_VERSION
+#define HF_VERSION "0.0.0"
+#endif
+#define VERSION HF_VERSION
 
 static void print_help(void)
 {
