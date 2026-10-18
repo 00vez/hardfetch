@@ -6,8 +6,9 @@
 #include <windows.h>
 #endif
 
-/* U+00B7 MIDDLE DOT, UTF-8 C2 B7 */
-static const char SEP[] = "\xC2\xB7";
+/* ASCII on purpose: the U+00B7 middle dot did not render in every console
+   configuration. */
+static const char SEP[] = "|";
 static const char INDENT[] = "             "; /* OUTPUT_COLUMN spaces */
 
 const char* output_separator(void)

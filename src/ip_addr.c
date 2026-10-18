@@ -8,7 +8,6 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <iphlpapi.h>
-#include <iphlpapi.h>
 
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
@@ -37,12 +36,12 @@ static int iftype_score(ULONG t)
     }
 }
 
-static void shorten_label(const wchar_t* friendly, const wchar_t* description, char* out, size_t outLen)
+static void shorten_label(const wchar_t* friendly, const wchar_t* description,
+                          char* out, size_t outLen)
 {
     const wchar_t* src = (friendly && friendly[0]) ? friendly : description;
-    if (!src) { snprintf(out, outLen, "Net"); return; }
-    if (WideCharToMultiByte(CP_UTF8, 0, src, -1, out, (int)outLen, NULL, NULL) == 0)
-        out[0] = '\0';
+    if (!src || WideCharToMultiByte(CP_UTF8, 0, src, -1, out, (int)outLen, NULL, NULL) == 0)
+        out[0] = 0;
     if (!out[0]) snprintf(out, outLen, "Net");
 }
 
@@ -103,11 +102,9 @@ void ip_collect(hf_state* s, int show_all)
 
     debug_begin("ip");
 
-    s->ip_local[0] = '\0';
-    s->ip_label[0] = '\0';
-    s->ip_extra[0] = '\0';
-    s->ip_more = 0;
-
+    s->ip_local[0] = 0;
+    s->ip_label[0] = 0;
+    s->ip_iface_count = 0;
     ZeroMemory(ifaces, sizeof(ifaces));
 
     for (int attempt = 0; attempt < 4; attempt++) {
@@ -144,16 +141,15 @@ void ip_collect(hf_state* s, int show_all)
     debug_log("best interface '%s' -> %s (score %d)",
               ifaces[0].label, ifaces[0].value, ifaces[0].score);
 
-    if (show_all && count > 1) {
-        size_t pos = 0;
-        for (int i = 1; i < count && pos + 1 < sizeof(s->ip_extra); i++) {
-            int n = snprintf(s->ip_extra + pos, sizeof(s->ip_extra) - pos,
-                             "%s%s  %s", pos ? "   " : "", ifaces[i].label, ifaces[i].value);
-            if (n < 0) break;
-            pos += (size_t)n;
+    if (show_all) {
+        for (int i = 1; i < count && s->ip_iface_count < 8; i++) {
+            snprintf(s->ip_ifaces[s->ip_iface_count].label,
+                     sizeof(s->ip_ifaces[0].label), "%s", ifaces[i].label);
+            snprintf(s->ip_ifaces[s->ip_iface_count].value,
+                     sizeof(s->ip_ifaces[0].value), "%s", ifaces[i].value);
+            s->ip_iface_count++;
         }
-        s->ip_more = 1;
-        debug_log("%d further interfaces collected", count - 1);
+        debug_log("%d further interfaces collected", s->ip_iface_count);
     }
 
     debug_end();

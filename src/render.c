@@ -334,8 +334,14 @@ static void render_network(const hf_state* s)
     if (s->ip_local[0]) {
         snprintf(label, sizeof(label), "IP (%s)", s->ip_label);
         print_row(label, s->ip_local);
-        if (s->options_all && s->ip_extra[0])
-            print_row_detail(s->ip_extra);
+        if (s->options_all) {
+            for (int i = 0; i < s->ip_iface_count; i++) {
+                char line[96];
+                snprintf(line, sizeof(line), "%s  %s",
+                         s->ip_ifaces[i].label, s->ip_ifaces[i].value);
+                print_row_detail(line);
+            }
+        }
     }
 
     if (s->options_all) {

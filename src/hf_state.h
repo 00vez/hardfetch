@@ -88,8 +88,11 @@ typedef struct {
     char        ip_local[96];
     char        ip_label[24];
     char        ip_public[64];
-    int         ip_more;           /* additional interfaces exist */
-    char        ip_extra[256];
+    struct {
+        char label[24];
+        char value[48];
+    } ip_ifaces[8];
+    int         ip_iface_count;
 } hf_state;
 
 void hf_state_init(hf_state* s);
