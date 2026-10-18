@@ -13,7 +13,7 @@ Description: |-
   no configuration and starts in roughly 28 milliseconds.
 PackageFamilyName: hardfetch
 PackageUrl: https://github.com/00vez/hardfetch
-ReleaseNotesUrl: https://github.com/00vez/hardfetch/releases/tag/3.3
+ReleaseNotesUrl: https://github.com/00vez/hardfetch/releases/tag/3.4
 ManifestType: locale
 ManifestVersion: 1.4
 Tags:

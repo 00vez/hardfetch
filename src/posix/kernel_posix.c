@@ -34,7 +34,8 @@ void kernel_collect_kernel(hf_state* s)
     if (uname(&u) == 0) {
         s->kernel_major = 0;
         s->kernel_minor = 0;
-        snprintf(s->kernel_build_str, sizeof(s->kernel_build_str), "%s", u.release);
+        snprintf(s->kernel_build_str, sizeof(s->kernel_build_str), "%.*s",
+                 (int)sizeof(s->kernel_build_str) - 1, u.release);
     } else {
         s->kernel_build_str[0] = 0;
         debug_log("uname failed");

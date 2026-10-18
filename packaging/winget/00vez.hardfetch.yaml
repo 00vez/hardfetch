@@ -1,14 +1,14 @@
 PackageIdentifier: 00vez.hardfetch
 PackageType: exe
-PackageVersion: 3.3
+PackageVersion: 3.4
 
 InstallerType: nullsoft
 UpgradeBehavior: install
-ReleaseDate: 2026-10-18
+ReleaseDate: 2026-10-19
 Installers:
 - Architecture: x64
-  InstallerUrl: https://github.com/00vez/hardfetch/releases/download/3.3/hardfetch.exe
-  InstallerSha256: 48749b51570af186c59cc52c91f10530305efb66a93864c5d215b111591d93da
+  InstallerUrl: https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe
+  InstallerSha256: 52debc4bf2404f581bf5d2095456856bde266a9931c37bd761993abac763c7ba
   NestedInstallerType: portable
   NestedInstallerFiles:
   - RelativeFilePath: hardfetch.exe
@@ -37,7 +37,7 @@ Description: |-
   timings and the data source that was used.
 PackageFamilyName: hardfetch
 PackageUrl: https://github.com/00vez/hardfetch
-ReleaseNotesUrl: https://github.com/00vez/hardfetch/releases/tag/3.3
+ReleaseNotesUrl: https://github.com/00vez/hardfetch/releases/tag/3.4
 Tags:
 - cli
 - system

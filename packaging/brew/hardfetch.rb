@@ -1,10 +1,10 @@
 class Hardfetch < Formula
   desc "Compact system info tool, neofetch style, in C"
   homepage "https://github.com/00vez/hardfetch"
-  url "https://github.com/00vez/hardfetch/releases/download/3.3/hardfetch"
-  sha256 "c3763b30e01206396b1fb1ce2bff89cac0a65302e9bd4a9b8eb21046fc23735f"
+  url "https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch"
+  sha256 "0c2844073594c09f8766418f2afcce15f34081e93e8f44118a95ef4fb13dcba7"
   license "MIT"
-  version "3.3"
+  version "3.4"
 
   # Only the Linux build exists. macOS is still on the 0.2.4 collector set,
   # so there is nothing to install here yet.

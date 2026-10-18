@@ -116,10 +116,12 @@ void os_collect(hf_state* s)
              (int)sizeof(s->os_build_str) - 1, haveUname ? u.release : "");
 
     if (s->os_product[0] == 0 && haveUname)
-        snprintf(s->os_product, sizeof(s->os_product), "%s", u.sysname);
+        snprintf(s->os_product, sizeof(s->os_product), "%.*s",
+                 (int)sizeof(s->os_product) - 1, u.sysname);
 #endif
 
-    snprintf(s->os_arch, sizeof(s->os_arch), "%s", haveUname ? u.machine : "");
+    snprintf(s->os_arch, sizeof(s->os_arch), "%.*s",
+             (int)sizeof(s->os_arch) - 1, haveUname ? u.machine : "");
 
     debug_log("product='%s' version='%s' build='%s' arch='%s'",
               s->os_product, s->os_display_version, s->os_build_str, s->os_arch);
