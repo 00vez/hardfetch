@@ -60,6 +60,11 @@ void print_row_detail(const char* value)
     printf("%s\x1b[97m%s\x1b[0m" OUTPUT_NL, INDENT, value ? value : "");
 }
 
+void print_line_flush(const char* value)
+{
+    printf("[97m%s[0m" OUTPUT_NL, value ? value : "");
+}
+
 void print_header(const char* text)
 {
     printf("\x1b[1;92m%s\x1b[0m" OUTPUT_NL, text ? text : "");

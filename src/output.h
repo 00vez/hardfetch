@@ -21,6 +21,10 @@ void output_init(void);
 void print_row(const char* label, const char* value);       /* gray label, white value   */
 void print_row_green(const char* label, const char* value);  /* gray label, green value   */
 void print_row_detail(const char* value);                   /* indented gray continuation */
+
+/* Same colour as a detail row but starting at column 0, for rows that sit
+   outside the value column such as the extra network adapters. */
+void print_line_flush(const char* value);
 void print_header(const char* text);                        /* green, own line           */
 
 void output_clear_screen(void);

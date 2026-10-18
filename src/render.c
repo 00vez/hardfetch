@@ -248,7 +248,8 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
     }
 }
 
-static void render_gpu(const hf_state* s)
+/* Returns non-zero when at least one adapter row was printed. */
+static int render_gpu(const hf_state* s)
 {
     int primary_shown = 0;
 
@@ -268,6 +269,7 @@ static void render_gpu(const hf_state* s)
         render_gpu_one(g, label);
         primary_shown = 1;
     }
+    return primary_shown;
 }
 
 static void render_disk(const hf_state* s)
@@ -353,7 +355,7 @@ static void render_network(const hf_state* s)
             char line[192];
             snprintf(line, sizeof(line), "%s  %s",
                      s->ip_ifaces[i].label, s->ip_ifaces[i].value);
-            print_row_detail(line);
+            print_line_flush(line);
         }
     }
 }
@@ -372,7 +374,9 @@ void render(const hf_state* s, int options)
     render_memory(s);
     print_newline();
 
-    render_gpu(s);
+    if (render_gpu(s))
+        print_newline();
+
     render_disk(s);
     render_display(s);
     render_network(s);
