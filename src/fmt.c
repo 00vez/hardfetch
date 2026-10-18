@@ -112,12 +112,16 @@ void fmt_load(char* out, size_t n, double fraction, const char* suffix)
 
     if (p < 0.0) p = 0.0;
     if (p > 100.0) p = 100.0;
+    if (suffix && suffix[0] == 0) suffix = 0;   /* no trailing space */
 
     colour = fmt_load_colour(fmt_load_level(fraction));
-    if (colour[0] == 0)
-        snprintf(out, n, "%.0f%% %s", p, suffix ? suffix : "");
-    else
-        snprintf(out, n, "%s%.0f%% %s\x1b[0m", colour, p, suffix ? suffix : "");
+    if (colour[0] == 0) {
+        if (suffix) snprintf(out, n, "%.0f%% %s", p, suffix);
+        else        snprintf(out, n, "%.0f%%", p);
+    } else {
+        if (suffix) snprintf(out, n, "%s%.0f%% %s[0m", colour, p, suffix);
+        else        snprintf(out, n, "%s%.0f%%[0m", colour, p);
+    }
 }
 
 /* ---------- temperature severity ---------- */
