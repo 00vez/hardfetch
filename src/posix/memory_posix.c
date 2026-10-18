@@ -1,83 +1,121 @@
 #include "../memory.h"
-#include "../memory_spd.h"
-#include "../output.h"
+#include "../debug.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #if defined(__APPLE__)
-typedef unsigned int u_int;
-typedef unsigned char u_char;
-typedef unsigned short u_short;
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #endif
 
 #ifndef __APPLE__
-static unsigned long kb_from_line(const char *line) {
-  while (*line && (*line < '0' || *line > '9')) line++;
-  return *line ? strtoul(line, NULL, 10) : 0;
+static unsigned long kb_from_line(const char* line)
+{
+    while (*line && (*line < '0' || *line > '9')) line++;
+    return *line ? strtoul(line, NULL, 10) : 0;
 }
 #endif
 
-void print_memory_info(void)
+void memory_collect_usage(hf_state* s)
 {
-    double totalGiB = 0, usedGiB = 0;
+    unsigned long long total = 0, avail = 0;
+
+    debug_begin("ram");
 
 #if defined(__APPLE__)
-    uint64_t phys = 0;
-    size_t len = sizeof(phys);
-    int mib[2] = { CTL_HW, HW_MEMSIZE };
-    if (sysctl(mib, 2, &phys, &len, NULL, 0) == 0) {
-        totalGiB = phys / (1024.0 * 1024.0 * 1024.0);
+    {
+        uint64_t phys = 0;
+        size_t len = sizeof(phys);
+        int mib[2] = { CTL_HW, HW_MEMSIZE };
 
-        mach_port_t host = mach_host_self();
-        vm_statistics64_data_t vs;
-        mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-        if (host_statistics64(host, HOST_VM_INFO64,
-                              (host_info64_t)&vs, &count) == KERN_SUCCESS) {
-            vm_size_t page_size = 0;
-            host_page_size(host, &page_size);
-            uint64_t freeb  = vs.free_count * page_size;
-            uint64_t inact  = vs.inactive_count * page_size;
-            double availGiB = (double)(freeb + inact) / (1024.0*1024.0*1024.0);
-            usedGiB = totalGiB - availGiB;
-            if (usedGiB < 0) usedGiB = 0;
+        if (sysctl(mib, 2, &phys, &len, NULL, 0) == 0)
+            total = (unsigned long long)phys;
+
+        {
+            mach_port_t host = mach_host_self();
+            vm_statistics64_data_t vs;
+            mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+
+            memset(&vs, 0, sizeof(vs));
+            if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vs,
+                                  &count) == KERN_SUCCESS) {
+                vm_size_t page = 0;
+                host_page_size(host, &page);
+                avail = (unsigned long long)(vs.free_count + vs.inactive_count) * page;
+            }
+            mach_port_deallocate(mach_task_self(), host);
         }
-        mach_port_deallocate(mach_task_self(), host);
     }
 #else
-    FILE* f = fopen("/proc/meminfo", "r");
-    if (f) {
-        unsigned long total = 0, avail = 0;
-        char line[256];
-        while (fgets(line, sizeof(line), f)) {
-            if (strncmp(line, "MemTotal:", 9) == 0)
-                total = kb_from_line(line);
-            else if (strncmp(line, "MemAvailable:", 13) == 0) {
-                avail = kb_from_line(line);
-                break;
+    {
+        FILE* f = fopen("/proc/meminfo", "r");
+        if (f) {
+            char line[256];
+            unsigned long kt = 0, ka = 0;
+            while (fgets(line, sizeof(line), f)) {
+                if (strncmp(line, "MemTotal:", 9) == 0) kt = kb_from_line(line);
+                else if (strncmp(line, "MemAvailable:", 13) == 0) { ka = kb_from_line(line); break; }
             }
-        }
-        fclose(f);
-        if (total > 0) {
-            totalGiB = (double)total / 1024.0 / 1024.0;
-            usedGiB  = (avail ? (double)(total - avail) : total) / 1024.0 / 1024.0;
+            fclose(f);
+            total = (unsigned long long)kt * 1024ULL;
+            avail = (unsigned long long)ka * 1024ULL;
         }
     }
 #endif
 
-    if (totalGiB <= 0) { print_block("RAM", "N/A"); return; }
+    if (avail > total) avail = total;
+    s->ram_total = total;
+    s->ram_used = total - avail;
 
-    char buf[160];
-    int pos = snprintf(buf, sizeof(buf), "%.1f / %.1f GiB", usedGiB, totalGiB);
+    debug_log("total=%llu used=%llu avail=%llu", s->ram_total, s->ram_used, avail);
+    debug_end();
+}
 
-    unsigned int speed = 0, cas = 0;
-    if (get_memory_speed(&speed, &cas) == 0 && speed > 0) {
-        if (cas > 0) pos += snprintf(buf + pos, sizeof(buf) - pos, "  |  %u MHz  CL%u", speed, cas);
-        else        pos += snprintf(buf + pos, sizeof(buf) - pos, "  |  %u MHz", speed);
+/* Speed and CAS come from dmidecode on Linux and hw.memsize on macOS; neither
+   is readable without privileges in most default setups, so the fields stay
+   empty rather than being guessed. */
+void memory_collect_spd(hf_state* s)
+{
+    debug_begin("ram-spd");
+
+    s->ram_mhz = 0;
+    s->ram_cl = 0;
+    s->ram_type[0] = 0;
+    s->ram_modules = 0;
+    s->ram_module_bytes = 0;
+
+#if defined(__APPLE__)
+    {
+        /* Apple Silicon has no SPD data reachable without a kernel driver. */
+        debug_log("no SPD source on this platform");
     }
-    print_block("RAM", buf);
+#else
+    {
+        unsigned long long total = 0;
+        FILE* f = fopen("/proc/meminfo", "r");
+
+        if (f) {
+            char line[256];
+            while (fgets(line, sizeof(line), f)) {
+                if (strncmp(line, "MemTotal:", 9) == 0) {
+                    unsigned long kb = kb_from_line(line);
+                    if (kb > 0) total = (unsigned long long)kb * 1024ULL;
+                    break;
+                }
+            }
+            fclose(f);
+        }
+        if (total > 0) {
+            s->ram_modules = 1;
+            s->ram_module_bytes = total;
+        }
+        debug_log("modules=%u bytes=%llu (speed and CAS need privileged SPD access)",
+                  s->ram_modules, s->ram_module_bytes);
+    }
+#endif
+
+    debug_end();
 }

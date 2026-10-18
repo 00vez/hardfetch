@@ -1,154 +1,130 @@
 #include "display.h"
 #include "debug.h"
+#include "edid.h"
 
-#include <math.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
 
-#define EDID_SIZE 128
+/* Path building avoids backslash literals on purpose: they are easy to get
+   wrong when the text passes through tooling, and a missing separator turns
+   into a silent "key not found". */
+#define BS 0x5C
 
-static bool edid_is_valid(const unsigned char* e, size_t len)
+typedef struct {
+    wchar_t buf[320];
+    size_t  len;
+} keybuf;
+
+static void kb_init(keybuf* k)
 {
-    static const unsigned char header[8] = { 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0 };
-    if (len < EDID_SIZE) return false;
-    return memcmp(e, header, 8) == 0;
+    k->len = 0;
+    k->buf[0] = 0;
 }
 
-/* 0xFC descriptor: monitor model name, 13 bytes, newline terminated. */
-static void edid_get_name(const unsigned char* e, char* out, size_t outLen)
+static void kb_lit(keybuf* k, const wchar_t* s)
 {
-    unsigned int i;
-    out[0] = '\0';
-    for (i = 0x36; i + 0x12 < 0x7E; i += 0x12) {
-        if (e[i] != 0x00) continue;              /* timing descriptor, skip */
-        if (e[i + 3] != 0xFC) continue;          /* not the model name tag */
-        {
-            size_t n = 0;
-            while (n < 13 && e[i + 5 + n] != 0x0A && e[i + 5 + n] != 0x00) {
-                if (n + 1 < outLen) out[n] = (char)e[i + 5 + n];
-                n++;
-            }
-            while (n > 0 && out[n - 1] == ' ') n--;
-            out[n < outLen ? n : outLen - 1] = '\0';
-            return;
-        }
-    }
+    while (*s && k->len + 1 < sizeof(k->buf) / sizeof(k->buf[0]))
+        k->buf[k->len++] = *s++;
+    k->buf[k->len] = 0;
 }
 
-/* Physical size in mm. Some panels report nonsense in the detailed timing
-   descriptor, so cross-check it against the basic display parameters. */
-static void edid_get_physical_size(const unsigned char* e, unsigned int* w, unsigned int* h)
+static void kb_ch(keybuf* k, wchar_t c)
 {
-    unsigned int dtdW = ((unsigned int)(e[68] & 0xF0) << 4) + e[66];
-    unsigned int dtdH = ((unsigned int)(e[68] & 0x0F) << 8) + e[67];
-    unsigned int bdpW = (unsigned int)e[21] * 10;
-    unsigned int bdpH = (unsigned int)e[22] * 10;
-
-    if (bdpW > 0 && bdpH > 0 &&
-        abs((int)dtdW - (int)bdpW) < 10 && abs((int)dtdH - (int)bdpH) < 10) {
-        *w = dtdW;
-        *h = dtdH;
-    } else {
-        *w = bdpW;
-        *h = bdpH;
-    }
+    if (k->len + 1 < sizeof(k->buf) / sizeof(k->buf[0]))
+        k->buf[k->len++] = c;
+    k->buf[k->len] = 0;
 }
 
-/* HKLM\SYSTEM\CurrentControlSet\Enum\<monitorDevicePath>\Device Parameters\EDID.
-   The device path looks like \?\DISPLAY#DEL40xx#...#{...}; '#' becomes '\'. */
-static bool read_edid(const wchar_t* monitorDevicePath, unsigned char* out, DWORD outLen)
+/* EDID lives at
+   HKLM \ SYSTEM \ CurrentControlSet \ Enum \ <monitorDevicePath> \ Device Parameters \ EDID
+   The device path from the display API looks like \?\DISPLAY#DEL40xx#...#{GUID}
+   where '#' maps to a separator. Reading it straight from the registry also
+   works in sessions the display configuration API refuses, which is the
+   whole point of having this path. */
+
+int registry_edid(const wchar_t* monitorDevicePath, unsigned char* out, DWORD* outLen)
 {
-    wchar_t regPath[300];
-    size_t len = 300;
-    const wchar_t* src = L"SYSTEM\\CurrentControlSet\\Enum";
+    keybuf k;
     const wchar_t* p;
-    size_t i = 0;
     HKEY hKey;
-    DWORD size = outLen;
+    DWORD size;
     DWORD type = 0;
-    bool ok = false;
+    LONG rc;
 
-    wcscpy_s(regPath, len, src);
+    if (!monitorDevicePath || !out || !outLen || *outLen == 0)
+        return 0;
+
+    kb_init(&k);
+    kb_lit(&k, L"SYSTEM");
+    kb_ch(&k, BS);
+    kb_lit(&k, L"CurrentControlSet");
+    kb_ch(&k, BS);
+    kb_lit(&k, L"Enum");
+    kb_ch(&k, BS);
+
     p = monitorDevicePath;
-
-    /* skip the leading \?\ */
-    while (*p == L'\\' || *p == L'?') p++;
-    while (*p && i + 1 < len) {
-        if (*p == L'{') break;
-        regPath[i++] = (*p == L'#') ? L'\\' : *p;
+    while (*p == BS || *p == L'?') p++;
+    while (*p && *p != L'{') {
+        kb_ch(&k, (*p == L'#') ? BS : *p);
         p++;
     }
-    wcscpy_s(regPath + i, len - i, L"Device Parameters");
+    if (k.len == 0)
+        return 0;
 
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, regPath, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
-        return false;
+    kb_ch(&k, BS);
+    kb_lit(&k, L"Device Parameters");
+
+    rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, k.buf, 0, KEY_READ, &hKey);
+    if (rc != ERROR_SUCCESS) {
+        debug_log("RegOpenKeyExW('%ls') rc=%ld", k.buf, (long)rc);
+        return 0;
+    }
+
+    size = *outLen;
     if (RegQueryValueExW(hKey, L"EDID", NULL, &type, out, &size) == ERROR_SUCCESS &&
         type == REG_BINARY && size > 0) {
-        ok = true;
         if (debug_is_enabled())
             debug_raw("EDID", out, size);
+        *outLen = size;
+        RegCloseKey(hKey);
+        return 1;
     }
+
     RegCloseKey(hKey);
-    return ok;
+    return 0;
 }
 
-typedef BOOL(WINAPI* PFN_GetDpiForMonitor)(HMONITOR, int, UINT*, UINT*);
-
-static PFN_GetDpiForMonitor resolve_dpi(void)
-{
-    HMODULE shcapi = LoadLibraryA("shcore.dll");
-    PFN_GetDpiForMonitor fn;
-    if (!shcapi) return NULL;
-    fn = (PFN_GetDpiForMonitor)GetProcAddress(shcapi, "GetDpiForMonitor");
-    if (!fn) { FreeLibrary(shcapi); return NULL; }
-    return fn;
-}
-
-void display_collect(hf_state* s)
+/* Live mode. The only source that reports the mode actually in use rather
+   than what the panel could do. Needs an interactive session. */
+static int live_modes(hf_state* s)
 {
     DISPLAYCONFIG_PATH_INFO paths[64];
     DISPLAYCONFIG_MODE_INFO modes[128];
     UINT32 pathCount = 64, modeCount = 128;
+    LONG rc;
+    int added = 0;
 
-    debug_begin("display");
-
-    s->display_count = 0;
-
-    {
-        LONG rc = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths,
-                                     &modeCount, modes, NULL);
-        debug_log("QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS) -> %ld (0x%08lX) GetLastError=%s",
-                  (long)rc, (unsigned long)rc, debug_win32(GetLastError()));
-        if (rc != ERROR_SUCCESS) {
-            pathCount = 64;
-            modeCount = 128;
-            rc = QueryDisplayConfig(QDC_ALL_PATHS, &pathCount, paths,
-                                    &modeCount, modes, NULL);
-            debug_log("QueryDisplayConfig(QDC_ALL_PATHS) -> %ld (0x%08lX) paths=%lu modes=%lu",
-                      (long)rc, (unsigned long)rc, (unsigned long)pathCount,
-                      (unsigned long)modeCount);
-            if (rc != ERROR_SUCCESS) return;
-        }
+    rc = QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths,
+                            &modeCount, modes, NULL);
+    if (rc != ERROR_SUCCESS) {
+        debug_log("QueryDisplayConfig rc=%ld (0x%08lX)", (long)rc, (unsigned long)rc);
+        return 0;
     }
     debug_log("QueryDisplayConfig -> %lu active paths", (unsigned long)pathCount);
 
-    for (UINT32 i = 0; i < pathCount && s->display_count < HF_MAX_DISPLAYS; i++) {
+    for (UINT32 i = 0; i < pathCount && added < HF_MAX_DISPLAYS; i++) {
         DISPLAYCONFIG_PATH_INFO* path = &paths[i];
         DISPLAYCONFIG_SOURCE_MODE* srcMode;
         DISPLAYCONFIG_TARGET_DEVICE_NAME targetName;
-        DISPLAYCONFIG_TARGET_PREFERRED_MODE prefMode;
-        hf_display* d = &s->displays[s->display_count];
-        unsigned char edid[EDID_SIZE];
+        hf_display* d = &s->displays[added];
+        unsigned char edid[512];
+        DWORD edidLen = (DWORD)sizeof(edid);
 
         if (path->sourceInfo.modeInfoIdx >= modeCount) continue;
         srcMode = &modes[path->sourceInfo.modeInfoIdx].sourceMode;
 
         ZeroMemory(d, sizeof(*d));
-        ZeroMemory(&targetName, sizeof(targetName));
-        ZeroMemory(&prefMode, sizeof(prefMode));
-
         d->width = srcMode->width;
         d->height = srcMode->height;
         if (path->targetInfo.rotation == DISPLAYCONFIG_ROTATION_ROTATE90 ||
@@ -161,71 +137,122 @@ void display_collect(hf_state* s)
         d->refresh_den = path->targetInfo.refreshRate.Denominator;
         d->primary = (srcMode->position.x == 0 && srcMode->position.y == 0) ? 1 : 0;
 
+        ZeroMemory(&targetName, sizeof(targetName));
         targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
         targetName.header.size = sizeof(targetName);
         targetName.header.adapterId = path->targetInfo.adapterId;
         targetName.header.id = path->targetInfo.id;
-
         if (DisplayConfigGetDeviceInfo(&targetName.header) == ERROR_SUCCESS) {
-            if (read_edid(targetName.monitorDevicePath, edid, sizeof(edid)) &&
-                edid_is_valid(edid, sizeof(edid))) {
-                edid_get_name(edid, d->name, sizeof(d->name));
-                edid_get_physical_size(edid, &d->phys_w_mm, &d->phys_h_mm);
-                debug_log("display '%s' edid ok, %u x %u mm", d->name,
-                          d->phys_w_mm, d->phys_h_mm);
-            } else {
-                debug_log("display '%ls' has no usable EDID",
-                          targetName.monitorFriendlyDeviceName);
-                if (targetName.flags.friendlyNameFromEdid)
-                    WideCharToMultiByte(CP_UTF8, 0, targetName.monitorFriendlyDeviceName,
-                                        -1, d->name, (int)sizeof(d->name), NULL, NULL);
-            }
-        } else {
-            debug_log("DisplayConfigGetDeviceInfo(TARGET_NAME) failed: %s",
-                      debug_win32(GetLastError()));
-        }
-
-        prefMode.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE;
-        prefMode.header.size = sizeof(prefMode);
-        prefMode.header.adapterId = path->targetInfo.adapterId;
-        prefMode.header.id = path->targetInfo.id;
-        if (DisplayConfigGetDeviceInfo(&prefMode.header) == ERROR_SUCCESS) {
-            debug_log("preferred mode %ux%u @ %u/%u Hz",
-                      prefMode.targetMode.targetVideoSignalInfo.activeSize.cx,
-                      prefMode.targetMode.targetVideoSignalInfo.activeSize.cy,
-                      prefMode.targetMode.targetVideoSignalInfo.vSyncFreq.Numerator,
-                      prefMode.targetMode.targetVideoSignalInfo.vSyncFreq.Denominator);
-        }
-
-        /* Effective DPI, which is what the user actually sees under scaling. */
-        {
-            static PFN_GetDpiForMonitor dpiFn = NULL;
-            static int dpiResolved = 0;
-            if (!dpiResolved) { dpiResolved = 1; dpiFn = resolve_dpi(); }
-            POINT pt = { srcMode->position.x, srcMode->position.y };
-            HMONITOR hm = MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY);
-            UINT dx = 0, dy = 0;
-            if (dpiFn && hm && dpiFn(hm, 0 /*MDT_EFFECTIVE_DPI*/, &dx, &dy) && dx > 0) {
-                d->dpi = dx;
-                debug_log("effective dpi %u x %u", dx, dy);
-            } else {
-                debug_log("GetDpiForMonitor unavailable for this display");
+            if (registry_edid(targetName.monitorDevicePath, edid, &edidLen) &&
+                edid_is_valid(edid, edidLen)) {
+                edid_name(edid, d->name, sizeof(d->name));
+                edid_physical_size(edid, &d->phys_w_mm, &d->phys_h_mm);
+            } else if (targetName.flags.friendlyNameFromEdid) {
+                WideCharToMultiByte(CP_UTF8, 0, targetName.monitorFriendlyDeviceName,
+                                    -1, d->name, (int)sizeof(d->name), NULL, NULL);
             }
         }
-        if (d->dpi == 0) {
-            HDC hdc = GetDC(NULL);
-            int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-            if (dpi > 0) d->dpi = (unsigned int)dpi;
-            ReleaseDC(NULL, hdc);
-        }
 
-        debug_log("display %d '%s' %ux%u @ %u/%u Hz %ux%u mm dpi=%u primary=%d",
-                  s->display_count, d->name, d->width, d->height,
-                  d->refresh_num, d->refresh_den, d->phys_w_mm, d->phys_h_mm,
-                  d->dpi, d->primary);
+        debug_log("display %d '%s' %ux%u @ %u/%u Hz %ux%u mm primary=%d",
+                  added, d->name, d->width, d->height, d->refresh_num,
+                  d->refresh_den, d->phys_w_mm, d->phys_h_mm, d->primary);
+        added++;
+    }
+    return added;
+}
 
-        s->display_count++;
+/* Sessions without display configuration access still have their monitors
+   in the registry. Resolution and rate stay unknown there, because the only
+   source for those is the API that just refused; reporting a guessed mode
+   would be worse than reporting none. */
+static int registry_monitors(hf_state* s)
+{
+    HKEY enumKey, subKey;
+    int added = 0;
+
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+            L"SYSTEM\\CurrentControlSet\\Enum\\DISPLAY", 0, KEY_READ, &enumKey)
+        != ERROR_SUCCESS) {
+        debug_log("RegOpenKeyExW(Enum DISPLAY) failed");
+        return 0;
     }
 
+    for (DWORD i = 0; i < 64 && added < HF_MAX_DISPLAYS; i++) {
+        wchar_t name[256];
+        DWORD nameLen = (DWORD)(sizeof(name) / sizeof(name[0]));
+
+        name[0] = 0;
+        if (RegEnumKeyExW(enumKey, i, name, &nameLen, NULL, NULL, NULL, NULL)
+            != ERROR_SUCCESS)
+            break;
+        if (!name[0]) continue;
+
+        if (RegOpenKeyExW(enumKey, name, 0, KEY_READ, &subKey) == ERROR_SUCCESS) {
+            for (DWORD j = 0; j < 16 && added < HF_MAX_DISPLAYS; j++) {
+                wchar_t inst[256];
+                DWORD instLen = (DWORD)(sizeof(inst) / sizeof(inst[0]));
+                keybuf path;
+                unsigned char edid[512];
+                DWORD edidLen = (DWORD)sizeof(edid);
+                hf_display* d;
+
+                inst[0] = 0;
+                if (RegEnumKeyExW(subKey, j, inst, &instLen, NULL, NULL,
+                                  NULL, NULL) != ERROR_SUCCESS)
+                    break;
+                if (!inst[0]) continue;
+
+                kb_init(&path);
+                kb_ch(&path, BS);
+                kb_lit(&path, L"DISPLAY");
+                kb_ch(&path, BS);
+                kb_lit(&path, name);
+                kb_ch(&path, BS);
+                kb_lit(&path, inst);
+
+                if (!registry_edid(path.buf, edid, &edidLen)) continue;
+                if (!edid_is_valid(edid, edidLen)) continue;
+
+                /* One panel can be registered under several instance keys. */
+                {
+                    char nameBuf[64];
+                    int dup = 0;
+                    edid_name(edid, nameBuf, sizeof(nameBuf));
+                    for (int k = 0; k < added; k++)
+                        if (strcmp(s->displays[k].name, nameBuf) == 0) dup = 1;
+                    if (dup) continue;
+                }
+
+                d = &s->displays[added];
+                ZeroMemory(d, sizeof(*d));
+                edid_name(edid, d->name, sizeof(d->name));
+                edid_physical_size(edid, &d->phys_w_mm, &d->phys_h_mm);
+                d->primary = (added == 0);
+                debug_log("registry monitor '%s' %ux%u mm",
+                          d->name, d->phys_w_mm, d->phys_h_mm);
+                added++;
+            }
+            RegCloseKey(subKey);
+        }
+    }
+    RegCloseKey(enumKey);
+    return added;
+}
+
+void display_collect(hf_state* s)
+{
+    int n;
+
+    debug_begin("display");
+    s->display_count = 0;
+
+    n = live_modes(s);
+    if (n == 0) {
+        debug_log("no live display configuration, falling back to registry EDID");
+        n = registry_monitors(s);
+    }
+    s->display_count = n;
+
+    debug_log("display_collect -> %d display(s)", n);
     debug_end();
 }

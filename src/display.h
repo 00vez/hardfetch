@@ -3,10 +3,17 @@
 
 #include "hf_state.h"
 
-/* Resolution and refresh rate from QueryDisplayConfig; monitor name and
-   physical size from the EDID blob in
-   HKLM\SYSTEM\CurrentControlSet\Enum\<monitorDevicePath>\Device Parameters\EDID.
-   One row per active display. */
+/* Live resolution and refresh rate come from QueryDisplayConfig. Monitor
+   name and physical size come from the EDID blob in the registry.
+   Where the configuration API refuses, the registry monitors are still
+   reported, just without a mode. One entry per display. */
 void display_collect(hf_state* s);
+
+#ifdef _WIN32
+#include <windows.h>
+
+/* Reads the EDID for one monitor device path. Shared helper. */
+int registry_edid(const wchar_t* monitorDevicePath, unsigned char* out, DWORD* outLen);
+#endif
 
 #endif

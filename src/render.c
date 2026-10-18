@@ -1,10 +1,10 @@
 #include "render.h"
+#include "version.h"
 #include "fmt.h"
 #include "output.h"
 
 #include <stdio.h>
 #include <string.h>
-#include <windows.h>
 
 /* Joins up to three fields with the separator, skipping empty ones. The result
    starts at the first character: no leading separator, no padding. */
@@ -39,29 +39,12 @@ static int join_fields(char* out, size_t n, const char* a, const char* b, const 
     return used;
 }
 
-static void render_header(void)
+static void render_header(const hf_state* s)
 {
-    char user[128] = "user";
-    char host[192] = "unknown";
     char line[512];
 
-    {
-        wchar_t wu[256];
-        DWORD n = (DWORD)(sizeof(wu) / sizeof(wu[0]));
-        if (GetUserNameW(wu, &n))
-            WideCharToMultiByte(CP_UTF8, 0, wu, -1, user, (int)sizeof(user), NULL, NULL);
-    }
-    {
-        wchar_t wh[256];
-        DWORD n = (DWORD)(sizeof(wh) / sizeof(wh[0]));
-        if (GetComputerNameExW(ComputerNameDnsHostname, wh, &n) && wh[0])
-            WideCharToMultiByte(CP_UTF8, 0, wh, -1, host, (int)sizeof(host), NULL, NULL);
-        else if (GetComputerNameW(wh, &n) && wh[0])
-            WideCharToMultiByte(CP_UTF8, 0, wh, -1, host, (int)sizeof(host), NULL, NULL);
-    }
-
     snprintf(line, sizeof(line), "hardfetch v" HF_VERSION " %s %s@%s",
-             output_separator(), user, host);
+             output_separator(), s->user_name, s->host_name);
     print_header(line);
     print_newline();
 }
@@ -79,12 +62,23 @@ static void render_os(const hf_state* s)
     print_row("OS", line);
 
     if (s->options_all) {
-        snprintf(build, sizeof(build), "%lu.%llu", s->os_build, s->build_ubr);
-        print_row("Build", build);
+        /* Build and Kernel exist on both platforms but carry different
+           things: Windows has an update build revision, POSIX has none. */
+        if (s->build_ubr > 0) {
+            snprintf(build, sizeof(build), "%lu.%llu", s->os_build, s->build_ubr);
+            print_row("Build", build);
+        } else if (s->os_build_str[0]) {
+            print_row("Build", s->os_build_str);
+        }
 
-        snprintf(kernel, sizeof(kernel), "%s %u.%u.%lu.%llu",
-                 s->kernel_name, s->kernel_major, s->kernel_minor,
-                 s->kernel_build, s->build_ubr);
+        if (s->kernel_build_str[0]) {
+            snprintf(kernel, sizeof(kernel), "%s %s",
+                     s->kernel_name, s->kernel_build_str);
+        } else {
+            snprintf(kernel, sizeof(kernel), "%s %u.%u.%lu.%llu",
+                     s->kernel_name, s->kernel_major, s->kernel_minor,
+                     s->kernel_build, s->build_ubr);
+        }
         print_row("Kernel", kernel);
     }
 
@@ -216,7 +210,7 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
     }
 
     if (g->vram_total > 0) {
-        char vram[64], core[40] = "", mem[40] = "", line[160];
+        char vram[64], core[48] = "", mem[48] = "", line[224];
         char tmp[40];
 
         fmt_bytes_pair(vram, sizeof(vram), g->vram_used, g->vram_total);
@@ -236,7 +230,7 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
             join_fields(line, sizeof(line), vram, used, NULL);
         }
         {
-            char vramLine[96];
+            char vramLine[256];
             snprintf(vramLine, sizeof(vramLine), "VRAM %s", line);
             print_row_detail(vramLine);
         }
@@ -297,7 +291,12 @@ static void render_display(const hf_state* s)
         else
             snprintf(label, sizeof(label), "Display");
 
-        snprintf(resolution, sizeof(resolution), "%ux%u", d->width, d->height);
+        /* No mode from the platform means no mode to report; showing 0x0 would
+           be worse than showing only what is actually known. */
+        if (d->width > 0 && d->height > 0)
+            snprintf(resolution, sizeof(resolution), "%ux%u", d->width, d->height);
+        else
+            resolution[0] = 0;
 
         if (d->refresh_den > 0) {
             unsigned int hzValue = (unsigned int)
@@ -364,7 +363,7 @@ void render(const hf_state* s, int options)
 {
     (void)options;
 
-    render_header();
+    render_header(s);
     render_os(s);
     print_newline();
 

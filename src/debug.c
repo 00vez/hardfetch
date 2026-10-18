@@ -1,28 +1,57 @@
+#define _POSIX_C_SOURCE 200809L
 #include "debug.h"
 #include "output.h"
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <time.h>
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
 static int s_enabled = 0;
-static LARGE_INTEGER s_freq;
-static int s_have_freq = 0;
 
-/* main thread and the worker thread both log, so the per-section state
-   has to be thread local or the two interleave and mislabel each other. */
-static __declspec(thread) char s_module[32] = "?";
-static __declspec(thread) LARGE_INTEGER s_start;
+/* The module name and start time are per thread: main and the worker both
+   log, and shared state would interleave and mislabel them. */
+#if defined(_MSC_VER)
+#define HF_THREAD_LOCAL __declspec(thread)
+#else
+#define HF_THREAD_LOCAL __thread
+#endif
+
+static HF_THREAD_LOCAL char s_module[32] = "?";
+static HF_THREAD_LOCAL double s_start_ms = 0;
+static double s_freq_hz = 0;
+
+static double monotonic_ms(void)
+{
+#ifdef _WIN32
+    LARGE_INTEGER c;
+#else
+    struct timespec ts;
+#endif
+    if (s_freq_hz == 0) {
+#ifdef _WIN32
+        LARGE_INTEGER freq;
+        if (QueryPerformanceFrequency(&freq)) s_freq_hz = (double)freq.QuadPart;
+#else
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+            s_freq_hz = 1000000000.0;
+#endif
+    }
+#ifdef _WIN32
+    if (!QueryPerformanceCounter(&c) || s_freq_hz == 0) return 0;
+    return (double)c.QuadPart * 1000.0 / s_freq_hz;
+#else
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+#endif
+}
 
 void debug_enable(void)
 {
-    if (s_enabled) return;
     s_enabled = 1;
-    if (!s_have_freq) {
-        s_have_freq = QueryPerformanceFrequency(&s_freq) ? 1 : 0;
-    }
 }
 
 int debug_is_enabled(void)
@@ -34,12 +63,13 @@ void debug_begin(const char* module)
 {
     if (!s_enabled) return;
     snprintf(s_module, sizeof(s_module), "%s", module ? module : "?");
-    QueryPerformanceCounter(&s_start);
+    s_start_ms = monotonic_ms();
 }
 
 void debug_log(const char* fmt, ...)
 {
     va_list ap;
+
     if (!s_enabled) return;
     fprintf(stderr, "[%-8s] ", s_module);
     va_start(ap, fmt);
@@ -50,23 +80,22 @@ void debug_log(const char* fmt, ...)
 
 void debug_end(void)
 {
-    LARGE_INTEGER now;
-    double ms = 0.0;
+    double ms;
+
     if (!s_enabled) return;
-    QueryPerformanceCounter(&now);
-    if (s_have_freq && s_freq.QuadPart > 0)
-        ms = (double)(now.QuadPart - s_start.QuadPart) * 1000.0 / (double)s_freq.QuadPart;
+    ms = monotonic_ms() - s_start_ms;
     fprintf(stderr, "[%-8s] --- %.2f ms" OUTPUT_NL, s_module, ms);
 }
 
 void debug_raw(const char* label, const void* data, size_t len)
 {
     const unsigned char* p = (const unsigned char*)data;
-    size_t i;
+    size_t i, j;
+
     if (!s_enabled || !p) return;
-    fprintf(stderr, "[%-8s] %s (%zu bytes):" OUTPUT_NL, s_module, label ? label : "raw", len);
+    fprintf(stderr, "[%-8s] %s (%zu bytes):" OUTPUT_NL,
+            s_module, label ? label : "raw", len);
     for (i = 0; i < len; i += 16) {
-        size_t j;
         fprintf(stderr, "    %04zx  ", i);
         for (j = 0; j < 16 && i + j < len; j++)
             fprintf(stderr, "%02x ", p[i + j]);
@@ -81,32 +110,13 @@ void debug_raw(const char* label, const void* data, size_t len)
 
 #ifdef _WIN32
 
-static const char* hresult_str(unsigned long hr)
-{
-    switch (hr) {
-        case 0x00000000UL: return "S_OK";
-        case 0x00000001UL: return "S_FALSE";
-        case 0x80004001UL: return "E_NOTIMPL";
-        case 0x80070057UL: return "E_INVALIDARG";
-        case 0x80070032UL: return "E_NOTIMPL";
-        case 0x8007000EUL: return "E_OUTOFMEMORY";
-        case 0x80070005UL: return "E_ACCESSDENIED";
-        case 0x8001010AUL: return "E_NOINTERFACE";
-        case 0x80010107UL: return "RPC_E_INVALID_REPLY";
-        case 0x800706BAUL: return "RPC_S_SERVER_UNAVAILABLE";
-        case 0x800707D8UL: return "HRESULT_FROM_WIN32(ERROR_TIMEOUT)";
-        case 0x80010108UL: return "RPC_E_CALL_REJECTED";
-        default: return "unknown HRESULT";
-    }
-}
-
-const char* debug_win32(DWORD err)
+const char* debug_win32(unsigned long err)
 {
     static char buf[256];
     DWORD n = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                             NULL, err, 0, buf, (DWORD)sizeof(buf) - 1, NULL);
+                             NULL, (DWORD)err, 0, buf, (DWORD)sizeof(buf) - 1, NULL);
     if (n == 0) {
-        snprintf(buf, sizeof(buf), "Win32 error %lu", (unsigned long)err);
+        snprintf(buf, sizeof(buf), "Win32 error %lu", err);
         return buf;
     }
     while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
@@ -117,7 +127,22 @@ const char* debug_win32(DWORD err)
 const char* debug_hresult(long hr)
 {
     static char buf[128];
-    snprintf(buf, sizeof(buf), "0x%08lX %s", (unsigned long)hr, hresult_str((unsigned long)hr));
+    const char* name = "unknown HRESULT";
+
+    switch ((unsigned long)hr) {
+        case 0x00000000UL: name = "S_OK"; break;
+        case 0x00000001UL: name = "S_FALSE"; break;
+        case 0x80004001UL: name = "E_NOTIMPL"; break;
+        case 0x80070032UL: name = "E_NOTIMPL"; break;
+        case 0x80070057UL: name = "E_INVALIDARG"; break;
+        case 0x8007000EUL: name = "E_OUTOFMEMORY"; break;
+        case 0x80070005UL: name = "E_ACCESSDENIED"; break;
+        case 0x8001010AUL: name = "E_NOINTERFACE"; break;
+        case 0x800706BAUL: name = "RPC_S_SERVER_UNAVAILABLE"; break;
+        case 0x800707D8UL: name = "HRESULT_FROM_WIN32(ERROR_TIMEOUT)"; break;
+        default: break;
+    }
+    snprintf(buf, sizeof(buf), "0x%08lX %s", (unsigned long)hr, name);
     return buf;
 }
 

@@ -1,37 +1,45 @@
 #include "../kernel.h"
-#include "../output.h"
+#include "../debug.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <sys/utsname.h>
 
 #if defined(__APPLE__)
-typedef unsigned int u_int;
-typedef unsigned char u_char;
-typedef unsigned short u_short;
 #include <sys/types.h>
-#include <machine/types.h>
 #include <sys/sysctl.h>
 #endif
 
-void print_kernel_info(void)
+/* "Build" on Windows is the UBR patch level. There is no equivalent, so the
+   kernel release is not repeated here; the Kernel row carries it instead. */
+void kernel_collect_build(hf_state* s)
 {
-    char kern[128];
-#if defined(__APPLE__)
-    /* Darwin kernel version via sysctl kern.osrelease (e.g. 23.5.0) */
-    size_t len = sizeof(kern);
-    int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    if (sysctl(mib, 2, kern, &len, NULL, 0) != 0)
-        strcpy(kern, "Darwin");
-    else
-        kern[sizeof(kern) - 1] = '\0';
-#else
+    debug_begin("build");
+    s->build_ubr = 0;
+    debug_log("no update build revision on this platform");
+    debug_end();
+}
+
+void kernel_collect_kernel(hf_state* s)
+{
     struct utsname u;
-    if (uname(&u) == 0)
-        strncpy(kern, u.release, sizeof(kern) - 1);
-    else
-        strcpy(kern, "N/A");
+
+    debug_begin("kernel");
+
+    snprintf(s->kernel_name, sizeof(s->kernel_name), "%s", "Linux");
+#if defined(__APPLE__)
+    snprintf(s->kernel_name, sizeof(s->kernel_name), "%s", "Darwin");
 #endif
-    kern[sizeof(kern) - 1] = '\0';
-    print_block("Kernel", kern);
+
+    if (uname(&u) == 0) {
+        s->kernel_major = 0;
+        s->kernel_minor = 0;
+        snprintf(s->kernel_build_str, sizeof(s->kernel_build_str), "%s", u.release);
+    } else {
+        s->kernel_build_str[0] = 0;
+        debug_log("uname failed");
+    }
+
+    debug_log("kernel '%s %s'", s->kernel_name, s->kernel_build_str);
+    debug_end();
 }

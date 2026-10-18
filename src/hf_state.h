@@ -33,15 +33,20 @@ typedef struct {
 
 typedef struct {
     /* ---- static ---- */
+    char        user_name[128];
+    char        host_name[192];
+
     char        os_product[128];
     char        os_display_version[32];
-    char        os_arch[16];
-    unsigned long os_build;
+    char        os_arch[32];
+    unsigned long os_build;      /* Windows: numeric CurrentBuildNumber */
+    char        os_build_str[64]; /* POSIX: kernel release string        */
 
     unsigned long long build_ubr;
     char        kernel_name[32];
     unsigned int kernel_major, kernel_minor;
-    unsigned long kernel_build;
+    unsigned long kernel_build;   /* Windows: numeric build            */
+    char        kernel_build_str[64]; /* POSIX: kernel release string  */
 
     char        host[192];
 

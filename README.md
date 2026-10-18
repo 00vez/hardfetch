@@ -44,6 +44,7 @@ Tailscale  100.88.253.13/32
 
 Prebuilt in `bin/`:
 - Windows: `bin/hardfetch.exe`
+- Linux / WSL2: `bin/hardfetch`
 
 Build from source needs Visual Studio 2022 x64 and CMake 3.20:
 
@@ -71,6 +72,24 @@ exits.
 `--smc-dump` still exists for macOS and has no short form, because `-d`
 is `--debug` now. `--net` and `-n` were removed; `-a` covers that ground.
 
+## Platform support
+
+Windows and Linux/WSL2 produce the same layout and the same flags. What
+differs is only what each platform can read:
+
+| | Windows | Linux |
+|---|---|---|
+| display mode | QueryDisplayConfig | `/sys/class/drm/*/modes` |
+| monitor name and size | EDID in the registry | EDID in `/sys/class/drm/*/edid` |
+| CPU temperature | perflib thermal zone provider | `/sys/class/thermal` |
+| RAM speed and CAS | WMI | needs privileged SPD access |
+| GPU | D3DKMT plus NVML | sysfs plus NVML |
+
+A field the platform cannot supply is left out rather than guessed, so the
+Linux view is shorter than the Windows one on the same machine.
+
+macOS is not covered by this release.
+
 ## Runtime dependencies
 
 The executable itself has none, but it talks to services the operating
@@ -82,17 +101,12 @@ Everything degrades to a missing field rather than an error.
 CPU CAS latency is usually not shown: most firmware does not expose it,
 and raw SMBIOS tables have been closed to user mode since Windows 10 1607.
 
-## Platform support
-
-Windows is the tested target. The POSIX build still produces the 0.2.4
-output and is kept compiling; feature parity for Linux, WSL2 and macOS is
-planned for 0.4.0.
-
 ## Layout
 
-`src/main_win.c` is the Windows entry point, `src/main.c` the POSIX one.
-Collectors live in `src/*.c`, the WMI and COM parts in `src/*.cpp`, and
-POSIX collectors in `src/posix/`.
+`src/main.c` is the entry point on both platforms. Collectors live in
+`src/*.c`, the Windows WMI and COM parts in `src/*.cpp`, and the POSIX
+collectors in `src/posix/`. `render.c`, `fmt.c`, `edid.c`, `output.c` and
+`debug.c` are shared by both, which is what keeps the output identical.
 
 Docs: `AGENTS.md` (build and quirks), `plan.md` (spec), `progress.html`
 (log).

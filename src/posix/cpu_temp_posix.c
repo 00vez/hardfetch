@@ -1,5 +1,8 @@
 #include "../cpu_temp.h"
-#include "../output.h"
+#include "../debug.h"
+#include "../hf_state.h"
+
+#include <dirent.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -85,32 +88,78 @@ static int apple_hid_cpu_temp(int *out_c) {
 }
 #endif
 
-void print_cpu_temp_power(double load)
+static int read_temperature(void)
 {
-    char detail[128];
     int tempC = -1;
+
 #if defined(__APPLE__)
     if (is_arm64()) {
-        if (apple_smc_cpu_temp(&tempC) != 0) apple_hid_cpu_temp(&tempC);
+        if (apple_smc_cpu_temp(&tempC) != 0)
+            (void)apple_hid_cpu_temp(&tempC);
     } else {
-        const char *keys[] = {"TC0D","TC0P",NULL};
-        for (int i=0; keys[i]; i++) { int v; if (apple_smc_read_temp(keys[i],&v)==0){tempC=v;break;} }
+        static const char* keys[] = { "TC0D", "TC0P", NULL };
+        int i;
+        for (i = 0; keys[i]; i++) {
+            int v = 0;
+            if (apple_smc_read_temp(keys[i], &v) == 0) { tempC = v; break; }
+        }
     }
 #else
-    FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
-    if (f) {
-        int milli = 0;
-        if (fscanf(f, "%d", &milli) == 1) tempC = milli / 1000;
-        fclose(f);
+    /* The thermal zones are numbered and zone 0 is not always the CPU:
+       pick the one whose type says so. */
+    {
+        DIR* d = opendir("/sys/class/thermal");
+        if (d) {
+            struct dirent* e;
+            while ((e = readdir(d)) != NULL) {
+                char path[320];
+                char type[64] = {0};
+                FILE* f;
+                long milli = 0;
+                int isCpu;
+
+                if (strncmp(e->d_name, "thermal_zone", 12) != 0) continue;
+                snprintf(path, sizeof(path), "/sys/class/thermal/%s/type", e->d_name);
+                f = fopen(path, "r");
+                if (f) {
+                    if (fgets(type, sizeof(type), f))
+                        (void)strcspn(type, "\r\n");
+                    fclose(f);
+                }
+                isCpu = (strstr(type, "x86_pkg_temp") || strstr(type, "cpu") ||
+                         strstr(type, "soc_thermal"));
+                if (!isCpu) continue;
+
+                snprintf(path, sizeof(path), "/sys/class/thermal/%s/temp", e->d_name);
+                f = fopen(path, "r");
+                if (!f) continue;
+                if (fscanf(f, "%ld", &milli) == 1) tempC = (int)(milli / 1000);
+                fclose(f);
+                if (tempC > 0) break;
+            }
+            closedir(d);
+        }
+    }
+    if (tempC <= 0) {
+        FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+        if (f) {
+            long milli = 0;
+            if (fscanf(f, "%ld", &milli) == 1) tempC = (int)(milli / 1000);
+            fclose(f);
+        }
     }
 #endif
 
-    int pos;
-    if (load >= 0) pos = snprintf(detail, sizeof(detail), "Load  %.1f%%", load);
-    else pos = snprintf(detail, sizeof(detail), "Load  N/A");
-    if (tempC >= 0)
-        pos += snprintf(detail + pos, sizeof(detail) - pos, "   |  Temp  %d\xc2\xb0""C", tempC);
-    else
-        pos += snprintf(detail + pos, sizeof(detail) - pos, "   |  Temp  N/A");
-    print_detail(detail);
+    return tempC;
+}
+
+void cpu_temp_collect(hf_state* s)
+{
+    int c;
+
+    debug_begin("temp");
+    c = read_temperature();
+    s->cpu_temp_c = c;
+    debug_log("cpu temp = %d C", c);
+    debug_end();
 }

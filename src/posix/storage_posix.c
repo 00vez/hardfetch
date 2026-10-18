@@ -1,28 +1,58 @@
 #include "../storage.h"
-#include "../output.h"
+#include "../debug.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <sys/statvfs.h>
+#include <unistd.h>
 
-void print_storage_info(void)
+void storage_collect(hf_state* s)
 {
     struct statvfs v;
-    if (statvfs("/", &v) != 0) { print_block("Disk", "N/A"); return; }
+    unsigned long long total, freeb, used;
 
-    unsigned long long total = (unsigned long long)v.f_blocks * v.f_frsize;
-    unsigned long long freeb = (unsigned long long)v.f_bavail * v.f_frsize;
-    unsigned long long used  = total - freeb;
-    if (total == 0) { print_block("Disk", "N/A"); return; }
-    double pct = (double)used / (double)total * 100.0;
+    debug_begin("disk");
 
-    const char* unit;
-    double divisor;
-    if (total >= 1024ULL * 1024 * 1024 * 1024) { divisor = 1024.0*1024*1024*1024; unit = "TiB"; }
-    else                                        { divisor = 1024.0*1024*1024;      unit = "GiB"; }
-    double u = (double)used  / divisor;
-    double t = (double)total / divisor;
+    snprintf(s->disk_volume, sizeof(s->disk_volume), "%s", "/");
 
-    char buf[128];
-    snprintf(buf, sizeof(buf), "%.2f / %.2f %s (%.0f%%)", u, t, unit, pct);
-    print_block("Disk", buf);
+    /* The filesystem the executable itself lives on is the closest match to
+       what Windows reports for its system drive. */
+    {
+        char exe[4096];
+        ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+        if (n > 0) {
+            exe[n] = 0;
+            char* slash = strrchr(exe, '/');
+            if (slash && slash != exe) {
+                *slash = 0;
+                slash = strrchr(exe, '/');
+                if (slash) {
+                    if (slash == exe) slash[1] = 0;
+                    else *slash = 0;
+                    snprintf(s->disk_volume, sizeof(s->disk_volume), "%s", exe);
+                }
+            }
+            debug_log("executable path volume '%s'", s->disk_volume);
+        }
+    }
+
+    if (statvfs(s->disk_volume, &v) != 0) {
+        debug_log("statvfs('%s') failed", s->disk_volume);
+        s->disk_total = 0;
+        s->disk_used = 0;
+        debug_end();
+        return;
+    }
+
+    total = (unsigned long long)v.f_blocks * v.f_frsize;
+    freeb = (unsigned long long)v.f_bavail * v.f_frsize;
+    if (total < freeb) freeb = total;
+    used = total - freeb;
+
+    s->disk_total = total;
+    s->disk_used = used;
+
+    debug_log("volume=%s total=%llu used=%llu free=%llu",
+              s->disk_volume, total, used, freeb);
+    debug_end();
 }

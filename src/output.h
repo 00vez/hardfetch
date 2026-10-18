@@ -37,7 +37,7 @@ int  output_quit_requested(void);
 
 const char* output_separator(void);                         /* U+00B7 MIDDLE DOT */
 
-/* --- legacy layout, kept for the frozen POSIX build (see src/posix/*) --- */
+/* Legacy v0.2.4 layout, kept for the POSIX tree. */
 void print_label(const char* label);
 void print_value(const char* value);
 void print_value_green(const char* value);

@@ -1,95 +1,122 @@
 #include "../os_info.h"
-#include "../output.h"
+#include "../debug.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/utsname.h>
 
 #if defined(__APPLE__)
-static void mac_sw_vers(char* product, size_t product_sz, char* build, size_t build_sz)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
+static void strip_quotes(char* s)
 {
-    /* Apple wants version in product + build in release */
-    struct utsname u;
-    if (uname(&u) == 0) {
-        strncpy(build, u.release, build_sz - 1);
-        build[build_sz - 1] = '\0';
+    size_t n = strlen(s);
+    char* end;
+
+    if (n >= 2 && s[0] == '"') {
+        memmove(s, s + 1, n);
+        n--;
+        end = s + n;
+        while (end > s && end[-1] != '"') end--;
+        if (end > s) end[-1] = 0;
     }
-    /* sw_vers -productVersion gives e.g. 14.5 */
-    FILE* p = popen("/usr/bin/sw_vers -productVersion", "r");
+    {
+        size_t len = strlen(s);
+        while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) s[--len] = 0;
+    }
+}
+
+static void os_release_value(const char* key, char* out, size_t outLen)
+{
+    FILE* f = fopen("/etc/os-release", "r");
+
+    out[0] = 0;
+    if (!f) return;
+    while (fgets(out, (int)outLen, f)) {
+        size_t klen = strlen(key);
+        if (strncmp(out, key, klen) == 0 && out[klen] == '=') {
+            memmove(out, out + klen + 1, strlen(out + klen + 1) + 1);
+            strip_quotes(out);
+            fclose(f);
+            return;
+        }
+    }
+    out[0] = 0;
+    fclose(f);
+}
+
+#if defined(__APPLE__)
+static void mac_sw_vers(char* product, size_t productSz, char* release, size_t releaseSz)
+{
+    struct utsname u;
+    FILE* p;
+
+    release[0] = 0;
+    if (uname(&u) == 0)
+        snprintf(release, releaseSz, "%s", u.release);
+
+    p = popen("/usr/bin/sw_vers -productVersion", "r");
     if (p) {
         char line[64] = {0};
         if (fgets(line, sizeof(line), p)) {
-            char* nl = strchr(line, '\n'); if (nl) *nl = '\0';
-            snprintf(product, product_sz, "macOS %s", line);
+            char* nl = strchr(line, '\n');
+            if (nl) *nl = 0;
+            snprintf(product, productSz, "macOS %s", line);
         }
         pclose(p);
     } else {
-        snprintf(product, product_sz, "macOS");
+        snprintf(product, productSz, "macOS");
     }
 }
 #endif
 
-static char s_product[128];
-static char s_build[128];
-static char s_display[64];
-static int s_init = 0;
-
-static void init_once(void)
+void os_collect(hf_state* s)
 {
-    if (s_init) return;
-    s_product[0] = '\0'; s_build[0] = '\0';
+    struct utsname u;
+    int haveUname;
+
+    debug_begin("os");
+    haveUname = (uname(&u) == 0);
 
 #if defined(__APPLE__)
-    mac_sw_vers(s_product, sizeof(s_product), s_build, sizeof(s_build));
-#else
-    struct utsname u;
-    if (uname(&u) == 0)
-        strncpy(s_build, u.release, sizeof(s_build) - 1);
-    FILE* f = fopen("/etc/os-release", "r");
-    if (f) {
-        char line[256];
-        while (fgets(line, sizeof(line), f)) {
-            if (strncmp(line, "PRETTY_NAME=", 12) == 0) {
-                char* p = line + 12;
-                if (*p == '"') { p++; char* q = strchr(p, '"'); if (q) *q = '\0'; }
-                else { char* q = strchr(p, '\n'); if (q) *q = '\0'; }
-                strncpy(s_product, p, sizeof(s_product) - 1);
-                break;
-            }
+    {
+        char release[64] = {0};
+        char* dot;
+
+        mac_sw_vers(s->os_product, sizeof(s->os_product), release, sizeof(release));
+        /* Darwin reports 23.5.0 while the marketing version is 14.5, so the
+           first component is the version and the rest is the build, the same
+           split the Windows build makes. */
+        dot = strchr(release, '.');
+        if (dot) {
+            *dot = 0;
+            snprintf(s->os_display_version, sizeof(s->os_display_version), "%s", release);
+            snprintf(s->os_build_str, sizeof(s->os_build_str), "%s", dot + 1);
+        } else {
+            snprintf(s->os_display_version, sizeof(s->os_display_version), "%s", release);
+            s->os_build_str[0] = 0;
         }
-        fclose(f);
     }
-    if (getenv("WSL_DISTRO_NAME") || getenv("WSLENV")) {
-        const char* tag = " (WSL2)";
-        size_t cur = strlen(s_product);
-        if (cur + strlen(tag) < sizeof(s_product)) strcat(s_product, tag);
-    }
-#endif
-    s_init = 1;
-}
-
-void print_os_info(void)
-{
-    init_once();
-    struct utsname u;
-    const char* arch = "";
-    if (uname(&u) == 0) arch = u.machine;
-
-    char buf[512];
-    const char* prod = s_product[0] ? s_product : u.sysname;
-#if defined(__APPLE__)
-    snprintf(buf, sizeof(buf), "%s (%s)", prod, arch);
 #else
-    const char* rel = s_build[0] ? s_build : u.release;
-    if (arch[0])
-        snprintf(buf, sizeof(buf), "%s %s  |  %s", prod, rel, arch);
-    else
-        snprintf(buf, sizeof(buf), "%s %s", prod, rel);
-#endif
-    print_block("OS", buf);
-}
+    /* NAME and VERSION_ID give the same shape as the Windows build, which
+       reports "Windows 11 Pro 25H2": product and version as separate fields.
+       PRETTY_NAME would repeat the version inside the product. */
+    os_release_value("NAME", s->os_product, sizeof(s->os_product));
+    os_release_value("VERSION_ID", s->os_display_version, sizeof(s->os_display_version));
+    snprintf(s->os_build_str, sizeof(s->os_build_str), "%.*s",
+             (int)sizeof(s->os_build_str) - 1, haveUname ? u.release : "");
 
-const char* get_os_product(void)        { init_once(); return s_product[0] ? s_product : "macOS"; }
-const char* get_os_build(void)          { init_once(); return s_build; }
-const char* get_os_display_version(void){ init_once(); return s_display; }
+    if (s->os_product[0] == 0 && haveUname)
+        snprintf(s->os_product, sizeof(s->os_product), "%s", u.sysname);
+#endif
+
+    snprintf(s->os_arch, sizeof(s->os_arch), "%s", haveUname ? u.machine : "");
+
+    debug_log("product='%s' version='%s' build='%s' arch='%s'",
+              s->os_product, s->os_display_version, s->os_build_str, s->os_arch);
+    debug_end();
+}

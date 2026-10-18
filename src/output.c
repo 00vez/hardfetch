@@ -70,10 +70,12 @@ void print_header(const char* text)
     printf("\x1b[1;92m%s\x1b[0m" OUTPUT_NL, text ? text : "");
 }
 
+/* Screen control. On Windows the Win32 console API is used because escape
+   sequences are not honoured in every console setup; on POSIX the escape
+   sequences are the native path. */
+
 #ifdef _WIN32
-/* The screen control below uses the Win32 console API rather than escape
-   sequences. Escape sequences are not honoured on every console setup, which
-   left stale text from the previous frame on screen. */
+
 static HANDLE console_out(void)
 {
     HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -121,6 +123,8 @@ static void set_cursor_visible(int visible)
 void output_hide_cursor(void) { set_cursor_visible(0); }
 void output_show_cursor(void) { set_cursor_visible(1); }
 
+/* Polls the console input buffer without blocking, so the live loop can
+   notice q while it waits for the next tick. */
 int output_quit_requested(void)
 {
     HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
@@ -129,14 +133,13 @@ int output_quit_requested(void)
 
     if (h == INVALID_HANDLE_VALUE) return 0;
     if (!PeekConsoleInput(h, &rec, 1, &read) || read == 0) return 0;
-
     if (!ReadConsoleInput(h, &rec, 1, &read) || read == 0) return 0;
 
     if (rec.EventType == KEY_EVENT && rec.Event.KeyEvent.bKeyDown) {
         switch (rec.Event.KeyEvent.wVirtualKeyCode) {
             case 'Q': case 'q': case VK_ESCAPE:
                 return 1;
-            case 'C':   /* Ctrl+C arrives as a key event without a console host */
+            case 'C':
                 if (rec.Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))
                     return 1;
                 break;
@@ -147,7 +150,63 @@ int output_quit_requested(void)
     return 0;
 }
 
-#endif /* _WIN32 */
+#else /* POSIX */
+
+#include <termios.h>
+#include <sys/select.h>
+#include <unistd.h>
+
+void output_clear_screen(void)
+{
+    fputs("[H[2J", stdout);
+    fflush(stdout);
+}
+
+void output_hide_cursor(void) { fputs("[?25l", stdout); fflush(stdout); }
+void output_show_cursor(void) { fputs("[?25h", stdout); fflush(stdout); }
+
+/* Non-blocking single key read from stdin. Terminals deliver q and Escape as
+   plain bytes; the raw mode is only entered for the moment of the read. */
+int output_quit_requested(void)
+{
+    struct termios saved, raw;
+    fd_set fds;
+    struct timeval tv;
+    int rc = 0;
+    unsigned char c;
+
+    if (!isatty(STDIN_FILENO))
+        return 0;
+
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) <= 0)
+        return 0;
+
+    if (tcgetattr(STDIN_FILENO, &saved) != 0)
+        return 0;
+
+    raw = saved;
+    raw.c_lflag &= (unsigned)~(ICANON | ECHO);
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 0;
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) != 0) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+        return 0;
+    }
+
+    if (read(STDIN_FILENO, &c, 1) == 1) {
+        if (c == 'q' || c == 'Q' || c == 0x1B || c == 0x03)
+            rc = 1;
+    }
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+    return rc;
+}
+
+#endif /* platform */
 
 /* ---------------- legacy layout (frozen POSIX build) ---------------- */
 

@@ -22,11 +22,12 @@ endif()
 
 if(WIN32)
     add_executable(hardfetch
-        src/main_win.c
+        src/main.c
         src/output.c
         src/render.c
         src/fmt.c
         src/debug.c
+        src/edid.c
         src/hf_state.c
         src/os_info.c
         src/host.c
@@ -37,6 +38,7 @@ if(WIN32)
         src/ip_addr.c
         src/public_ip.c
         src/display.c
+        src/edid.c
         src/gpu.cpp
         src/cpu.c
         src/cpu_temp.cpp
@@ -71,6 +73,13 @@ else()
     add_executable(hardfetch
         src/main.c
         src/output.c
+        src/render.c
+        src/fmt.c
+        src/debug.c
+        src/edid.c
+        src/hf_state.c
+        src/posix/terminal_posix.c
+        src/posix/display_posix.c
         src/posix/os_info_posix.c
         src/posix/host_posix.c
         src/posix/kernel_posix.c
@@ -88,6 +97,7 @@ else()
         src/posix/ip_addr_posix.c
         src/posix/public_ip_posix.c
     )
+    target_compile_definitions(hardfetch PRIVATE HF_VERSION="${PROJECT_VERSION}")
     target_link_libraries(hardfetch PRIVATE pthread dl)
     if(APPLE)
         target_link_libraries(hardfetch PRIVATE "-framework CoreFoundation" "-framework IOKit")
