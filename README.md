@@ -6,7 +6,7 @@ The standard view takes about 28 ms from process start. No config file, no
 daemon, no assets to download.
 
 ```
-hardfetch v3.3 | user@DESKTOP-EXAMPLE
+hardfetch v3.4 | user@DESKTOP-EXAMPLE
 
 OS           Windows 11 Pro 25H2 | x86_64
 Build        26200.5674
@@ -42,9 +42,32 @@ Tailscale  100.88.253.13/32
 
 ## Install
 
-Prebuilt in `bin/`:
+```powershell
+# Windows, PowerShell, ohne Zusatzprogramme
+iwr https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe -OutFile hardfetch.exe
+```
+```bash
+# Linux und WSL2
+mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
+```
+
+Both report themselves:
+
+```
+hardfetch v3.4
+```
+
+Verify what you downloaded against the published checksums:
+
+```bash
+curl -fsSLO https://github.com/00vez/hardfetch/releases/download/3.4/SHA256SUMS
+sha256sum -c SHA256SUMS
+```
+
+Prebuilt binaries are also in `bin/`:
 - Windows: `bin/hardfetch.exe`
 - Linux / WSL2: `bin/hardfetch`
+- macOS arm64: `bin/hardfetch-darwin-arm64`, still on the 0.2.4 build and not part of any release
 
 Build from source needs Visual Studio 2022 x64 and CMake 3.20:
 

@@ -1,71 +1,111 @@
-# hardfetch — Implementierungsplan (realisiert v0.2.4, Stand 31.08.2026)
+# hardfetch — Implementierungsplan (realisiert v3.4, Stand 19.10.2026)
 
-> Original 0.1-Plan (Windows-only) unten unverändert — darüber IST-Stand: POSIX-Port via `src/posix/`, `apple_pmgr`/`apple_smc`, WSL/macOS verifiziert. Für Historie `progress.html`.
+> Historie bis v0.2.4 steht in `progress.html`. Der Originalplan für
+> Windows 0.1 ist weiter unten unverändert erhalten.
 
 ## Projektprinzipien (Non-Negotiable)
 
 | Prinzip | Umsetzung |
 |---------|-----------|
-| **Neubau** | Kein Fastfetch-Fork, reiner Eigenbau. `fork/` nur als Referenz. |
-| **Sprache** | C11 für Core + Module, **C++ nur für WMI/COM Fallback** (`*.cpp`) |
-| **Plattform** | Windows 10/11 x64 + WSL2/Linux + macOS arm64 (realisiert v0.2.4) |
-| **Portabilität** | MSVC **/MT** statisch linken, keine VC++ Redist nötig |
-| **GPU** | NVIDIA only via **dynamisches Laden** von `nvml.dll` |
-| **Admin** | OK für WMI/SPD/NVMe Temp — Tool zeigt was geht, sonst `N/A` |
-| **Storage** | 500 ms Messintervall, **0 MB/s → Zeile auslassen** |
-| **Output** | Kompakt, **Labels Grau / Werte Grün-Weiß**, kein Logo, kein Rahmen |
-| **Flags** | `--net` (Netzwerk an/aus), `--version`, `--help` |
+| **Neubau** | Kein Fastfetch-Fork, reiner Eigenbau. |
+| **Sprache** | C11 für Core + Module, **C++ nur für WMI/COM** (`memory_spd.cpp`, `cpu_temp.cpp`, `gpu.cpp`) |
+| **Ein Renderer** | `main.c`, `render.c`, `fmt.c`, `edid.c`, `output.c`, `debug.c` werden von Windows **und** POSIX gemeinsam gebaut |
+| **Collect/Render** | Jedes Modul liefert `*_collect(hf_state*)`. Ohne das gibt es kein `-l` und kein `-d` |
+| **Statisch vs. flüchtig** | Statisch einmalig, flüchtig pro Live-Tick |
+| **Portabilität** | MSVC **/MT** statisch, keine VC++ Redist nötig, 219 KB |
+| **Plattform** | Windows 11 x64 ist das Testziel. Linux und WSL2 liefern dasselbe Layout. macOS arm64 ist unverändert auf 0.2.4 |
+| **Zwei Threads** | Worker sammelt GPU, Shell, Terminal, Display. Main den Rest. Das Load-Fenster überdeckt die Collection |
+| **Nichts raten** | Fehlt eine Quelle, entfällt die Zeile. Kein geschätzter Wert, keine erfundene Refresh-Rate aus einem 128-Byte-EDID |
+| **Ausgabe** | Label-Spalte 14, Detailzeilen bei 13, Trenner `|` |
+| **Flags** | `-h -v -a -l[secs] -d`. `--net`/`-n` entfernt, `-d` ist jetzt `--debug` |
+| **Farben** | Grau für Labels, Grün für Namen, Weiß für Werte. Auslastung, Temperatur und VRAM-Füllung über eine fünfstufige Leiter: normal, hell orange, orange, hell rot, dunkel rot |
 
 ---
 
 ## Ziel-Output
 
 ```
-hardfetch v0.1
+hardfetch v3.4 | user@host
 
-  OS       Windows 11 Pro 26100
+OS           Windows 11 Pro 25H2 | x86_64
+Build        26200.9457
+Kernel       WIN32_NT 10.0.26200.9457
+Host         B650E AORUS ELITE X AX ICE
+Shell        PowerShell 7.6.7
+Terminal     Windows Terminal | 120x34 | truecolor
+             Cascadia Mono 11x22
+Uptime       11h 57m
 
-  CPU      AMD Ryzen 9 7950X @ 5.7 GHz
-           Load  34%  |  Temp  71°C  |  Power  88 W
+CPU          AMD Ryzen 7 7800X3D
+             4.20 GHz | 12% Load | 47 °C
+             boost 5.05 GHz | 8C/16T
 
-  GPU      NVIDIA GeForce RTX 4090
-           Core  2520 MHz  |  Mem  10501 MHz  |  Load  67%
-           VRAM  18.4 / 24.0 GB  |  Temp  72°C  |  Power  320 W
+RAM          13.42 / 31.12 GiB | 43%
+             6000 MHz | CL30
+             DDR5 | 32.00 GiB
 
-  RAM      22.1 / 32.0 GB  |  6000 MHz  CL30
+GPU          NVIDIA GeForce RTX 3070
+             14% Load | 61 °C | 187 W
+             VRAM 3.21 / 8.00 GiB | 40%
+             Core 2010 MHz | Memory 7001 MHz
 
-  Disk     Read  2450 MB/s  |  Write  1820 MB/s
-           NVMe Temp  38°C
+GPU 2        AMD Radeon(TM) Graphics
+             VRAM 512.00 MiB
+
+Disk         812.44 / 931.32 GiB | 87%
+Display      1920x1080 | 240 Hz | 32"
+             32G2WG8
+IP (WLAN)    192.168.178.36/24
+IP (Public)  203.0.113.42
 ```
 
-Mit `--net`:
-```
-  Net       12.4 MB/s  |   84.1 MB/s
-```
+Nur mit `-a`. Reihenfolge, Spalten und Einheiten sind auf beiden Plattformen
+identisch.
 
----
+### Farbleiter
+
+| Stufe | Grenze | 256-Farbe |
+|-------|--------|-----------|
+| normal | < 50 % | geerbt |
+| hell orange | ab 50 % | 215 `#FFAF00` |
+| orange | ab 70 % | 208 `#FF8700` |
+| hell rot | ab 85 % | 203 `#FF5F5F` |
+| dunkel rot | ab 95 % | 88 `#870000` |
+
+Temperatur nutzt dieselben Stufen mit 60/70/80/90 °C.
 
 ## Dateistruktur
 
 ```
 hardfetch/
-  fork/                              ← Referenz (bestehend, nicht ändern)
-  CMakeLists.txt
-  README.md
-  include/
-    nvml.h                           ← NVIDIA SDK Header (kopieren)
+  CMakeLists.txt                     ← ein Target, zwei Zweige
+  README.md                          ← Anwender
+  AGENTS.md                          ← Build, Quirks, Gotchas
+  plan.md                            ← dieses Dokument
+  progress.html                      ← Sitzungsprotokoll
+  release-notes-3.4.md               ← veröffentlichte Notizen
+  packaging/
+    scoop/hardfetch.json             ← ohne Bucket installierbar
+    winget/…                         ← Manifest, braucht PR für eine Quelle
+    brew/hardfetch.rb                ← Linux
+  bin/                               ← veröffentlichte Binaries + SHA256SUMS
   src/
-    main.c                           ← Entry, Flags, Callgraph
-    output.c / output.h              ← ANSI-Farbsystem + Print-Helfer
-    os_info.c / os_info.h            ← Windows-Version + Build
-    gpu_nvidia.c / gpu_nvidia.h      ← NVML dynamisch (C)
-    cpu.c / cpu.h                    ← Name, Takt, Load (Registry + PDH, C)
-    cpu_temp.c / cpu_temp.h          ← Temp, Power (Perflib C, WMI COM Fallback C++)
-    memory.c / memory.h              ← Used/Total (GlobalMemoryStatusEx, C)
-    memory_spd.c / memory_spd.h      ← Takt/Latenz (WMI COM, C++)
-    storage.c / storage.h            ← I/O Speed (PDH) + NVMe Temp (DeviceIoControl, C)
-    network.c / network.h            ← GetAdaptersAddresses (C)
+    main.c                           ← Einstieg, Flags, Threads, Live-Loop
+    render.c / render.h             ← gesamte Ausgabe, gemeinsam
+    fmt.c / fmt.h                   ← Einheiten, gemeinsam
+    edid.c / edid.h                  ← EDID-Parser, gemeinsam
+    output.c / output.h              ← ANSI, Spalten, Cursor, gemeinsam
+    debug.c / debug.h                ← Trace, Timings, gemeinsam
+    hf_state.c / hf_state.h         ← gesammelter Zustand, gemeinsam
+    os_info.c / host.c / kernel.c / uptime.c / shell.c
+    terminal.c / memory.c / storage.c / ip_addr.c / public_ip.c
+    display.c / cpu.c                ← nur Windows
+    memory_spd.cpp / cpu_temp.cpp / gpu.cpp   ← nur Windows, WMI und COM
+    posix/                           ← dieselben Module für Linux und macOS
 ```
+
+`src/gpu_nvidia.c` und `src/gpu_nvidia.h` sind tot und in keinem Target
+mehr enthalten.
 
 ---
 

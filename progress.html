@@ -21,7 +21,7 @@ th { border-bottom-color: #ddd; }
 </style>
 </head>
 <body>
-<div class="date">Protokoll zuletzt aktualisiert: 30.08.2026 (8. Session) — v0.2.4 + HID-Fallback</div>
+<div class="date">Protokoll zuletzt aktualisiert: 19.10.2026 (9. Session) — v3.4, Windows und Linux auf einem Renderer</div>
 <h1>hardfetch – Protokoll &amp; Fortschritt</h1>
 
 <h2>Projektziel</h2>
@@ -32,53 +32,97 @@ th { border-bottom-color: #ddd; }
 
 <h2>Kontext und Ausgangslage</h2>
 <ul>
-<li>Version <code>0.2.4</code>. Windows 11 25H2 (26200), macOS 26.5 (Darwin 25.5, Apple M4), WSL2 Ubuntu. Einzelnes CMake-Target, <code>src/</code> + <code>src/posix/</code> (Apple/Linux).</li>
-<li>Netzwerksektion nur mit <code>-n/--net</code>, Public-IP via WinHTTP (Win) / POSIX-Socket (Linux/macOS). Kein ICMP mehr, kein Admin nötig.</li>
-<li>Toolchain: VS 2022 BuildTools 17 2022 (MSVC /MT) — Windows; AppleClang 21.0.0 — macOS; gcc — WSL2/Ubuntu. Kein Ninja, kein Redistributable.</li>
-<li>Bekannte Einschränkungen (aus <code>AGENTS.md</code>): AMD Ryzen Boost via PDH 100% (CPPC) — nicht messbar im User-Mode; AMD-iGPU VRAM 0; k10temp N/A.</li>
+<li>Version <code>3.4</code>. Ausgangspunkt war <code>0.2.4</code> aus August 2025: getrennte Renderer pro Plattform, ein CMake-Target, <code>src/</code> plus <code>src/posix/</code>.</li>
+<li>Windows 11 25H2 (26200), Debian 13 unter WSL2, macOS arm64 vorhanden aber in dieser Umgebung ohne Toolchain.</li>
+<li>Bekannte Einschränkungen aus 0.2.4, inzwischen behoben: AMD-iGPU meldete 0 VRAM, CPU-Temperatur immer N/A, Kernel-Build <code>UBR</code> falsch, RAM-Frequenz fehlte teilweise.</li>
+<li>Neu und weiterhin offen: Swap wird auf keiner Plattform gezeigt, macOS ist nicht im Release, CI fehlt.</li>
 </ul>
 
  <h2>Architektur und Entscheidungen</h2>
 <ul>
-<li class="ok"><strong>Windows-Module (C++ WMI/COM):</strong> <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code> (NVML dynamisch via <code>LoadLibraryA</code>). Header mit <code>extern "C"</code>.</li>
-<li class="ok"><strong>Build-Quirks:</strong> <code>LINKER_LANGUAGE C</code>, leeres <code>CMAKE_CXX_IMPLICIT_LINK_LIBRARIES</code> gegen libstdc++.</li>
-<li class="ok"><strong>POSIX-Schicht <code>src/posix/</code> (Apple + Linux):</strong> 16 Module — <code>os_info/host/kernel/uptime/shell/gpu/cpu/cpu_temp/memory/memory_spd/storage/ip_addr/public_ip/apple_pmgr/apple_smc/battery</code> + HID-Fallback <code>apple_hid_cpu_temp</code> in <code>cpu_temp_posix.c</code>. Plattformweiche <code>if(WIN32) … else()</code> in <code>CMakeLists.txt</code>.</li>
-<li class="ok"><strong>Apple-Silicon Besonderheiten:</strong> CPU/GPU-Takt via <code>pmgr</code> <code>voltage-states*-sram</code> (CFData, Hz/kHz-Heuristik), Temp primär <code>AppleSMC</code> <code>IOConnectCallStructMethod</code> (Selector 2, Sub 5/8/9, 80-Byte <code>SmcParam</code>, <code>flt/sp78/fpe2/ui32</code>), Fallback <code>IOHIDEventSystemClient</code> privat (<code>0xff00/5</code>, <code>kIOHIDEventTypeTemperature=15</code>, 47 Sensoren, max <code>PMU t*</code>), Load via <code>host_processor_info 200ms</code>.</li>
-<li class="ok"><strong>WSL2/Linux verifiziert:</strong> <code>build-wsl/hardfetch</code> per <code>cmake -B build-wsl && cmake --build build-wsl</code> (WSL-Ubuntu, gcc, pthread/dl).</li>
+<li class="ok"><strong>Ein Renderer für beide Plattformen.</strong> <code>src/main.c</code>, <code>render.c</code>, <code>fmt.c</code>, <code>edid.c</code>, <code>output.c</code>, <code>debug.c</code> werden von Windows und POSIX gemeinsam gebaut. Das erzwingt gleiche Ausgabe statt nur ähnlicher: Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, gleiche Einheiten.</li>
+<li class="ok"><strong>Collect/Render-Trennung.</strong> Jedes Modul liefert <code>*_collect(hf_state*)</code>, das Rendern liegt an einer Stelle. Erst dadurch sind <code>-l</code> und <code>-d</code> überhaupt möglich.</li>
+<li class="ok"><strong>Statische gegen flüchtige Felder.</strong> Statisch einmalig (OS, Board, Shell, RAM-SPD, Disk, Display), flüchtig pro Tick (CPU-Takt, Last, GPU, Uptime, IP). <code>-l</code> sammelt nur die flüchtigen neu.</li>
+<li class="ok"><strong>Zwei Threads, nicht mehr.</strong> Worker sammelt GPU, Shell, Terminal, Display; Main sammelt den Rest. Das Load-Messfenster überdeckt die Collection, kostet also keine eigene Wartezeit.</li>
+<li class="ok"><strong>Windows-Datenquellen:</strong> GPU über <code>D3DKMT</code> (gdi32 per <code>LoadLibraryA</code>) statt WMI, NVML-Geräte über PCI-Bus-ID zugeordnet; CPU-Takt über <code>CallNtPowerInformation</code>; CPU-Temperatur über den perflib-Provider in <code>advapi32</code>; Kernel über <code>RtlGetVersion</code>; Display über <code>QueryDisplayConfig</code> mit EDID-Fallback aus dem Registry-Key <code>Enum\DISPLAY</code>.</li>
+<li class="ok"><strong>Linux-Datenquellen:</strong> GPU über <code>/sys/class/drm</code> plus NVML, RAM-SPD über <code>dmidecode</code>, Temperatur über <code>/sys/class/thermal</code>, beste Schnittstelle über die Default-Route aus <code>/proc/net/route</code>, Version aus <code>VERSION</code> in <code>os-release</code>.</li>
+<li class="ok"><strong>Ein EDID-Parser für beide.</strong> <code>src/edid.c</code>, am echten Blob des AOC3202 gegen das echte Binary geprüft: <code>32G2WG8</code>, 698x393 mm, 31,5 Zoll — dieselben Werte, die fastfetch nennt.</li>
+<li class="ok"><strong>Apple-Zweige unverändert.</strong> <code>apple_pmgr</code>, <code>apple_smc</code>, HID-Fallback bleiben, zielen aber noch auf die alte Kollektorform und sind in dieser Umgebung nicht baubar.</li>
 </ul>
 
 <h2>Akzeptanzkriterien</h2>
 <ul>
-<li class="ok">Kurzformen <code>-h/-v</code> + <code>-n/--net</code> + <code>-d/--smc-dump</code> (verifiziert: <code>hardfetch -v</code> → v0.2.4, <code>-d</code> → 2129 SMC-Keys).</li>
-<li class="ok"><code>hrf</code> Windows + WSL-<code>hrf()</code> funktionieren; Wall-Zeit Windows 0,22 s (Session 2).</li>
-<li class="ok">Netz-Sektion nur mit <code>-n</code>: Interfaces + Public-IP (WinHTTP / POSIX-Socket, 1-s <code>pthread_cond_timedwait</code>).</li>
-<li class="ok">WSL2 verifiziert: <code>build-wsl/hardfetch -n</code> → eth0 + Public IP, RTX 5070 via NVML, <code>build-wsl</code> grün (WSL-gcc).</li>
-<li class="ok">macOS Apple Silicon verifiziert: <code>build-silicon/hardfetch</code> (AppleClang 21) → CPU <code>Apple M4 @ 4.46 GHz</code>, GPU <code>@ 1.47 GHz</code>, <code>Load 22.7%</code> (host_processor_info 200 ms), <code>Uptime</code> Plural fix, <code>OS (arm64)</code>, Host ohne <code>.local</code>.</li>
-<li class="ok">Farbschema plattformunabhängig (ANSI 90/92/97/1;90), identisch Win/macOS/WSL2.</li>
+<li class="ok">Kurzformen <code>-h/-v/-a/-l/-d</code> auf beiden Plattformen identisch verhalten; unbekannte Flags und die entfernten <code>--net</code>/<code>-n</code> ergeben Exit 1 mit Meldung auf stderr.</li>
+<li class="ok">Layout identisch: Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, gleiche Einheiten. Auf Windows und Linux gegen dieselbe Ausgabe geprüft.</li>
+<li class="ok">Performance: Standardansicht Windows 49 ms gegen 283 ms in 0.2.4; Linux 20 ms. Referenz fastfetch 17 ms. Prozessboden dieser Maschine 3,3 ms.</li>
+<li class="ok">Display liefert Name und Größe auf beiden Plattformen. Windows liest das EDID-Blob aus dem Registry, Linux aus <code>/sys/class/drm/</code>; Parser gegen das echte AOC3202-Blob geprüft, <code>32G2WG8</code> / 31,5 Zoll.</li>
+<li class="ok">Kein Feld wird geraten: fehlt eine Quelle, entfällt die Zeile. Auf WSL fehlen deshalb CPU-Temperatur, zweite GPU und Display, weil keine Thermalzone und kein DRM-Konnektor existieren.</li>
+<li class="ok">Beide Builds ohne Warnung; AddressSanitizer sauber über Standardansicht und <code>-a</code>.</li>
+<li class="ok">Release-Binaries tragen SHA-256, die in <code>SHA256SUMS</code>, im scoop-Manifest, in beiden winget-Manifesten und der brew-Formel identisch stehen.</li>
 </ul>
 
-<h2>Aktueller Status — IST-Stand v0.2.4 + HID</h2>
+<h2>Aktueller Status — IST-Stand v3.4</h2>
 <ul>
-<li class="ok">Windows: <code>build\Release\hardfetch.exe</code> MSVC /MT, Exit 0; <code>-v/-h/-n</code> korrekt.</li>
-<li class="ok">WSL2: <code>build-wsl/hardfetch</code> gcc, Exit 0; <code>hrf -n</code> → eth0 + RTX 5070 + Public IP.</li>
-<li class="ok">macOS Apple Silicon (M4, Darwin 25.5): <code>build-silicon/hardfetch</code> AppleClang 21, Exit 0; <code>hardfetch -v</code> v0.2.4, <code>-d</code> → 2129 Keys / 1981 Zeilen Dump, <code>hardfetch</code> → CPU 4.46 GHz / GPU 1.47 GHz / Load 7–22% (host_processor_info 200 ms), Temp jetzt 51–52 °C via HID-Fallback.</li>
-<li class="ok">Änderungen <code>d1e4760</code> gepusht; <code>cpu_temp_posix.c</code> HID-Fallback lokal uncommitted, Verifikation mit <code>/tmp/hid_* </code> (47 Sensoren, valid 46, best 51.82 °C <code>PMU tcal</code>).</li>
-<li class="warn">SMC-Dump stabil, aber SMC-Temps weiter unbrauchbar (200 T-Keys, 0–1 Treffer, fluktuierend) — HID-Fallback löst Anzeige, SMC bleibt nur für Dump.</li>
+<li class="ok">Windows: <code>build\Release\hardfetch.exe</code>, MSVC /MT, 0 Warnungen, ASan sauber. Standardansicht 49 ms, <code>-a</code> 230 ms.</li>
+<li class="ok">Linux: <code>build-wsl/hardfetch</code>, gcc, 0 Warnungen. Standardansicht 20 ms, <code>-a</code> 155 ms. Verifiziert auf einer Debian-13-VM, die nur ueber einen Sprung-Host erreichbar ist.</li>
+<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. Heruntergeladen, Pruefsummen bestaetigt, Linux-Binary auf der VM ausgefuehrt.</li>
+<li class="ok">POSIX-Build war seit 3.0 kaputt und wurde es erst auf der Debian-VM, nicht unter Windows entdeckt: <code>output.c</code> hatte die neuen Win32-Aufrufe ohne Guard, die Legacy-Deklarationen lagen in einem <code>#ifdef __cplusplus</code>-Zweig, <code>main.c</code> includierte zwei Header nicht.</li>
+<li class="warn">Swap fehlt auf beiden Plattformen. Linux kann es aus <code>/proc/meminfo</code>, Win32 bietet nur das Commit-Limit. Bewusst nicht ergaenzt, weil die Zeile auf Windows etwas anderes bedeuten wuerde.</li>
+<li class="warn">macOS ist nicht im Release. Die Apple-Zweige zielen auf die alte Kollektorform; hier gibt es keinen Apple-Toolchain.</li>
 </ul>
 
 <h2>Offen — noch zu tun</h2>
 <ul>
-<li class="ok">Temp HID-Fallback implementiert (<code>src/posix/cpu_temp_posix.c</code> <code>apple_hid_cpu_temp</code> via <code>IOHIDEventSystemClientCreate</code> privat, 0xff00/5, 47 Sensoren) — Verifikation 51–52 °C stabil, Commit ausstehend.</li>
-<li class="ok">SMC-Packing 80B + frisches <code>q</code> + <code>le data32</code> gefixt (<code>d1e4760</code>) — Dump 2129 Keys verifiziert.</li>
-<li class="todo">Load jetzt korrekt (host_processor_info 200 ms), davor 20 ms/GetSystemTimes → 0%.</li>
-<li class="todo">Battery/Display/GPU-Load nicht im Output verknüpft (Module vorhanden, aber nicht angezeigt).</li>
-<li class="todo">Intel-Mac-Pfad (hw.cpufrequency, dGPU) ungetestet.</li>
-<li class="todo">CI-Matrix (macOS/Ubuntu/Windows) fehlt.</li>
-<li class="todo">Display &amp; CI vorerst nicht im Scope (Nutzer-Vorgabe).</li>
-<li class="todo">HID-Fallback decide: <code>PMU tcal</code> 51 °C vs <code>tdie</code> 45 °C max — aktuell <code>PMU t*</code> max inkl. <code>tcal</code>; Alternative <code>tdie</code>-only prüfen.</li>
+<li class="todo">macOS auf das v3-Layout portieren. Ohne Apple-Toolchain nicht verifizierbar, deshalb bewusst offen statt behauptet.</li>
+<li class="todo">Swap entscheiden: entweder nur unter Linux als Zeile nach RAM, oder ganz weglassen. Aktuell weggelassen.</li>
+<li class="todo">CPU-CAS-Latenz unter Windows: die meisten Firmwares melden sie nicht, und rohes SMBIOS ist gesperrt. Ohne gangbaren Weg.</li>
+<li class="todo">CI-Matrix (Windows, Ubuntu, macOS) fehlt. Zwei der drei Pfade sind bisher nur manuell geprueft.</li>
+<li class="todo">Schnellster Netzwerkpfad unter Linux: der Resolver der VM haengt zeitweise 5 s. Der Lookup ist heute begrenzt, das Ergebnis faellt dann auf <code>N/A</code> zurueck statt zu blockieren.</li>
+<li class="todo">winget-Manifest ist fertig, braucht aber einen PR nach <code>microsoft/winget-pkgs</code>, damit <code>winget install 00vez.hardfetch</code> ueberhaupt greift. Bisher nicht eingereicht.</li>
 </ul>
 
 <!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
+
+<h2>Protokoll vom 19.10.2026 (9. Session) — v3.4: ein Renderer, POSIX gefixt, Display auf beiden</h2>
+<h3>Ausgangslage</h3>
+<ul>
+<li>Das Linux-Binary behauptete im Release <code>3.3</code> die Version <code>3.3</code>, verhielt sich aber wie <code>0.2.4</code>. Statt das in den Release-Notes zu verstecken, wurde der Weg gewaehlt, den POSIX-Kollektoren denselben State fuellen zu lassen wie die Windows und den gemeinsamen Renderer zu benutzen.</li>
+<li>Referenz fastfetch 2.69.0 auf demselben Rechner: 45 ms Standardansicht, 31 ms Modulboden, 11,5 MB. hardfetch 0.2.4: 283 ms.</li>
+</ul>
+<h3>Befunde, die erst auf der Debian-VM sichtbar wurden</h3>
+<ul>
+<li class="ok"><strong>POSIX-Build war seit 3.0 kaputt.</strong> Die Behauptung, er kompiliere weiter, war eine Symbolabgleich-Pruefung und kein Build. <code>output.c</code> ist gemeinsam und hatte die Win32-Aufrufe fuer Screen-Clear, Cursor und Tastatur ohne Guard; die Legacy-Deklarationen lagen in einem <code>#ifdef __cplusplus</code>-Zweig; <code>main.c</code> includierte <code>cpu_temp.h</code> und <code>memory_spd.h</code> nicht.</li>
+<li class="ok"><strong><code>-a</code> brauchte 5,2 s bis zum ersten Bild</strong>, Standardansicht 20 ms. <code>getaddrinfo</code> und <code>connect</code> hatten kein Timeout und liefen auf dem Main-Thread vor dem Rendern. Der Resolver der VM haengt zeitweise rund 5 s, meistens ist er in 2 ms fertig.</li>
+<li class="ok"><strong>RAM-Speed war unter Linux gar nicht implementiert</strong>, nur nicht erreichbar. Ein eigener SMBIOS-Parser wurde verworfen, weil sich die Offsets ohne echte Struct-Bytes nicht pruefen liessen; stattdessen <code>dmidecode</code>, wie fastfetch es unter Linux auch nutzt.</li>
+<li class="ok"><strong>Thermal- und DRM-GPU-Pfade waren ungetestet</strong>, weil WSL weder Thermalzone noch DRM-Karte hat. Beide nehmen ihr sysfs-Wurzelverzeichnis aus einem Makro, das zur Laufzeit nichts aendert, und liessen sich gegen eine Fixture fahren: 47 &#176;C aus der Zone <code>x86_pkg_temp</code> statt <code>acpitz</code>, AMD-iGPU mit 512 MiB.</li>
+</ul>
+<h3>Fixes in 3.4</h3>
+<ul>
+<li class="ok">Public-IP auf eigenem Thread, <code>connect</code> non-blocking mit 1500-ms-<code>poll</code>, Join vor dem ersten Bild begrenzt. 25 Laeufe auf der VM: Maximum 166 ms.</li>
+<li class="ok"><code>disk_volume</code> war <code>char[8]</code>, <code>/home/user</code> wurde auf genau 7 Zeichen zu <code>/home/u</code>, <code>statvfs</code> scheiterte, die Disk-Zeile verschwand. Meine erste Erklaerung, es liege an zwei abgeschnittenen Pfadkomponenten, war falsch.</li>
+<li class="ok">Ausgabe ueber ssh nutzte ein nacktes LF. Ein Terminal rueckt eine Zeile runter, ohne die Spalte zurueckzusetzen; ab Spalte 78 verschmolzen Zeilen. Auf Windows nur nachgemessen worden, daher nicht aufgefallen.</li>
+<li class="ok"><code>/proc/cpuinfo</code> steckt den Takt in den Modellnamen, die CPU-Zeile las sich <code>i3-7100T CPU @ 3.40GHz</code>.</li>
+<li class="ok"><code>uptime_collect</code> ohne <code>debug_begin</code>, das Log landete im Host-Modul. Zwei Threads schrieben ungeschuetzt auf stderr und schnitten sich die Zeilen halb. PCI-Vendor <code>1B36</code> war als QEMU beschriftet, ist aber Reds QXL.</li>
+<li class="ok">Load sprang zwischen 0 und 100 Prozent: ein 20-ms-Fenster auf zwei vCPUs sind vier Ticks, unter drei ist der Quotient Rauschen. distribution <code>VERSION</code> statt <code>VERSION_ID</code>, damit <code>13.7 (trixie)</code> statt <code>13</code> erscheint.</li>
+</ul>
+<h3>Zwei Regressionen, die erst die Messung auf der VM zeigte</h3>
+<ul>
+<li class="warn">Der Lookup-Thread wurde <code>pthread_detach</code>et und danach gejoint. Ein Join auf einem detach-Thread kehrt sofort zurueck, die Wartezeit fand nie statt.</li>
+<li class="warn"><code>fetch_one</code> wertete das Ende des Response-Bodys als Fehler, weil ein Flag gleichzeitig &#8220;Austausch erfolgreich&#8221; und &#8220;mehr Daten&#8221; transportierte. Die Antwort kam korrekt an und wurde trotzdem verworfen.</li>
+</ul>
+<h3>Messwerte</h3>
+<ul>
+<li>Windows: Standardansicht 49 ms, <code>-a</code> 230 ms, <code>-d</code> 50 ms. Ausgangspunkt 283 ms.</li>
+<li>Prozessboden dieser Maschine: leeres C-Programm 3,3 ms. Die frueher gemessenen 23 ms waren Overhead der Messmethode, nicht Windows.</li>
+<li>Linux (Debian 13, 2 vCPUs): Standardansicht 20 ms, <code>-a</code> 155 ms.</li>
+<li>Beide Builds 0 Warnungen, AddressSanitizer sauber.</li>
+</ul>
+<h3>Packaging</h3>
+<ul>
+<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Pruefsummen schon oeffentlich verteilt waren und ein Ueberschreiben sie ungueltig machen wuerde.</li>
+<li class="ok">scoop laeuft direkt aus dem Manifest-URL ohne Bucket. winget-Manifest fertig und validiert, braucht aber einen PR fuer eine echte Paketquelle. brew-Formel deckt Linux ab.</li>
+</ul>
+
 <h2>Protokoll vom 30.08.2026 (8. Session) — HID-Fallback für Temp N/A (M4)</h2>
 <h3>Befund</h3>
 <ul>
@@ -241,18 +285,22 @@ th { border-bottom-color: #ddd; }
 
 <h2>Code und Repository</h2>
 <ul>
-<li>Repo: <code>C:\Users\v\Documents\lib\hardfetch</code> (Git). Letzte Commits: <code>5e05c43</code> (Fix main.c-Modulaufrufe), <code>6b1d77a</code> (Initial v0.1.0).</li>
-<li>Relevante Pfade: <code>src/main.c</code> (Einstieg, Flag-Parsing), <code>src/output.c/.h</code> (Formatierung), WMI-Module <code>cpu_temp.cpp</code>, <code>memory_spd.cpp</code>, <code>gpu.cpp</code>.</li>
-<li>Design-Referenz: <code>plan.md</code> (Deutsch) ist autoritative Design-Doku, vor Feature-Erweiterungen konsultieren.</li>
+<li>Repo: <code>C:\Users\v\Documents\lib\hardfetch</code>, Remote <code>github.com/00vez/hardfetch</code>, Branch <code>master</code>.</li>
+<li>Gemeinsam fuer beide Plattformen: <code>src/main.c</code> (Einstieg, Flags, Threads, Live-Loop), <code>src/render.c</code> (gesamte Ausgabe), <code>src/fmt.c</code>, <code>src/edid.c</code>, <code>src/output.c</code>, <code>src/debug.c</code>, <code>src/hf_state.c</code>.</li>
+<li>Nur Windows: <code>os_info.c</code>, <code>host.c</code>, <code>kernel.c</code>, <code>uptime.c</code>, <code>shell.c</code>, <code>terminal.c</code>, <code>memory.c</code>, <code>storage.c</code>, <code>ip_addr.c</code>, <code>public_ip.c</code>, <code>display.c</code>, <code>cpu.c</code> sowie <code>memory_spd.cpp</code>, <code>cpu_temp.cpp</code>, <code>gpu.cpp</code> fuer WMI und COM.</li>
+<li>Nur POSIX: <code>src/posix/</code> mit denselben Modulnamen. Der POSIX-Zweig in <code>CMakeLists.txt</code> listet jetzt dieselben gemeinsamen Dateien wie der Windows-Zweig.</li>
+<li>Tot: <code>src/gpu_nvidia.c</code> und <code>src/gpu_nvidia.h</code>, in keinem Target mehr enthalten.</li>
+<li>Packaging: <code>packaging/scoop/</code>, <code>packaging/winget/</code>, <code>packaging/brew/</code>. Release-Notizen liegen als <code>release-notes-3.4.md</code> im Baum.</li>
+<li><code>plan.md</code> ist die Design-Doku, <code>progress.html</code> dieses Protokoll.</li>
 </ul>
 
 <h2>Build, Tests und Skripte</h2>
 <ul>
-<li><code>cmake -B build -A x64</code> — Konfiguration (braucht VS-2022-x64-Umgebung).</li>
-<li><code>cmake --build build --config Release</code> — Build; Ergebnis <code>build\Release\hardfetch.exe</code>.</li>
-<li><code>hrf</code> — PowerShell-Alias auf <code>build\Release\hardfetch.exe</code>.</li>
-<li>Workaround bei kaputtem <code>vcvars64.bat</code> in Fremd-Shell: <code>INCLUDE</code>/<code>LIB</code>/<code>PATH</code> manuell auf MSVC <code>14.44.35207</code> + SDK <code>10.0.26100.0</code> setzen.</li>
-<li>Kein Testframework; Verifikation über Flags und Ausgabe am gebauten Binary.</li>
+<li><code>cmake -B build -A x64</code> und <code>cmake --build build --config Release</code> fuer Windows.</li>
+<li>Linux ueber WSL: <code>cmake -B build-wsl -S . -DCMAKE_BUILD_TYPE=Release</code> und <code>cmake --build build-wsl -j4</code>.</li>
+<li><code>hrf</code> als PowerShell-Alias. <code>HF_ASAN=ON</code> baut eine AddressSanitizer-Variante; die DLL liegt im Verzeichnis der MSVC-Tools.</li>
+<li>Kein Testframework. Verifikation laeuft ueber Flag-Matrix, Ausgabevergleich und Messungen auf der Zielmaschine.</li>
+<li class="warn">Nicht inkrementell bauen. Zwei Warnungen und ein gemeinsamer Header-Fehler fielen erst nach <code>--clean-first</code> auf, weil CMake Objektdateien wiederverwendet. Vor jeder Abnahme sauber bauen.</li>
 </ul>
 
 <h2>Protokoll vom 30.08.2026 (6. Session) - macOS Silicon Build-Fehler & Fixes</h2>
@@ -274,8 +322,12 @@ th { border-bottom-color: #ddd; }
 
 <h2>Deployment und Betrieb</h2>
 <ul>
-<li>Lokal: <code>build\Release\hardfetch.exe</code>; Start über <code>hrf</code> oder direkten Pfad.</li>
-<li>Adminrechte nötig für <code>--net</code> (ICMP), NVMe-Temp, CPU-Power, WMI-Thermalzonen.</li>
+<li>Windows: <code>bin\Release\-hardfetch.exe</code>; Linux: <code>bin/hardfetch</code>. Beide aus dem Release <code>3.4</code> und byte-identisch mit <code>bin/</code>.</li>
+<li>scoop: <code>scoop install https://raw.githubusercontent.com/00vez/hardfetch/master/packaging/scoop/hardfetch.json</code>.</li>
+<li>Ohne Paketmanager: <code>iwr https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe -OutFile hardfetch.exe</code> unter Windows, <code>curl -fsSL .../3.4/hardfetch -o ~/.local/bin/hardfetch &amp;&amp; chmod +x ~/.local/bin/hardfetch</code> unter Linux.</li>
+<li>Pruefsummen: <code>sha256sum -c SHA256SUMS</code> bzw. <code>Get-FileHash</code>. Die Werte muessen mit den Manifesten uebereinstimmen, sonst bricht die Installation ab.</li>
+<li><code>bin/hardfetch-darwin-arm64</code> stammt noch vom 30.08.2025 und ist kein Release-Stand.</li>
+<li>Keine Adminrechte noetig. Verwaist laeuft der Lookup-Thread hoechstens bis zum Prozessende, die Ausgabe wartet nie darauf.</li>
 </ul>
 
 </body>
