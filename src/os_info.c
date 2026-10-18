@@ -1,81 +1,62 @@
 #include "os_info.h"
-#include "output.h"
+#include "debug.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 
-static char s_product[256] = {0};
-static char s_build[64] = {0};
-static char s_display_version[64] = {0};
-static char s_arch[16] = "x86_64";
-static int s_initialized = 0;
-
-static void init_os_info(void)
+void os_collect(hf_state* s)
 {
-    if (s_initialized) return;
-
     HKEY hKey;
+    DWORD size;
+    SYSTEM_INFO si;
+
+    debug_begin("os");
+
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
             "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
             0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        DWORD size = sizeof(s_product);
-        RegQueryValueExA(hKey, "ProductName", NULL, NULL, (LPBYTE)s_product, &size);
-        size = sizeof(s_build);
-        RegQueryValueExA(hKey, "CurrentBuildNumber", NULL, NULL, (LPBYTE)s_build, &size);
-        size = sizeof(s_display_version);
-        if (RegQueryValueExA(hKey, "DisplayVersion", NULL, NULL, (LPBYTE)s_display_version, &size) != ERROR_SUCCESS)
-            s_display_version[0] = '\0';
+        size = (DWORD)sizeof(s->os_product);
+        if (RegQueryValueExA(hKey, "ProductName", NULL, NULL,
+                (LPBYTE)s->os_product, &size) != ERROR_SUCCESS)
+            s->os_product[0] = '\0';
+        size = (DWORD)sizeof(s->os_display_version);
+        if (RegQueryValueExA(hKey, "DisplayVersion", NULL, NULL,
+                (LPBYTE)s->os_display_version, &size) != ERROR_SUCCESS)
+            s->os_display_version[0] = '\0';
+        {
+            /* REG_SZ, not REG_DWORD: reading it as a DWORD yields zero. */
+            char buildStr[16];
+            DWORD t = 0;
+            size = sizeof(buildStr);
+            if (RegQueryValueExA(hKey, "CurrentBuildNumber", NULL, &t,
+                    (LPBYTE)buildStr, &size) == ERROR_SUCCESS && t == REG_SZ)
+                s->os_build = strtoul(buildStr, NULL, 10);
+        }
         RegCloseKey(hKey);
+    } else {
+        debug_log("RegOpenKeyExA(CurrentVersion) failed: %s", debug_win32(GetLastError()));
     }
 
-    SYSTEM_INFO si;
+    debug_log("ProductName='%s' DisplayVersion='%s' CurrentBuildNumber=%lu",
+              s->os_product, s->os_display_version, s->os_build);
+
     GetNativeSystemInfo(&si);
     switch (si.wProcessorArchitecture) {
-        case PROCESSOR_ARCHITECTURE_AMD64: strcpy_s(s_arch, sizeof(s_arch), "x86_64"); break;
-        case PROCESSOR_ARCHITECTURE_ARM64: strcpy_s(s_arch, sizeof(s_arch), "aarch64"); break;
-        case PROCESSOR_ARCHITECTURE_INTEL: strcpy_s(s_arch, sizeof(s_arch), "x86"); break;
-        default: s_arch[0] = '\0';
+        case PROCESSOR_ARCHITECTURE_AMD64: strcpy_s(s->os_arch, sizeof(s->os_arch), "x86_64"); break;
+        case PROCESSOR_ARCHITECTURE_ARM64: strcpy_s(s->os_arch, sizeof(s->os_arch), "aarch64"); break;
+        case PROCESSOR_ARCHITECTURE_INTEL: strcpy_s(s->os_arch, sizeof(s->os_arch), "x86"); break;
+        default: strcpy_s(s->os_arch, sizeof(s->os_arch), "unknown"); break;
+    }
+    debug_log("NativeSystemInfo arch -> '%s'", s->os_arch);
+
+    /* ProductName keeps saying "Windows 10" on Windows 11. */
+    if (s->os_build >= 22000 && s->os_product[0]) {
+        char* w10 = strstr(s->os_product, "Windows 10");
+        if (w10) memcpy_s(w10, strlen(w10), "Windows 11", 10);
     }
 
-    unsigned long buildNum = 0;
-    if (s_build[0]) buildNum = strtoul(s_build, NULL, 10);
-    if (buildNum >= 22000) {
-        char* win10 = strstr(s_product, "Windows 10");
-        if (win10) memcpy_s(win10, strlen(win10), "Windows 11", 10);
-    }
-
-    s_initialized = 1;
-}
-
-void print_os_info(void)
-{
-    init_os_info();
-    if (s_product[0] && s_build[0]) {
-        char buf[512];
-        int pos = snprintf(buf, sizeof(buf), "%s %s", s_product, s_build);
-        if (s_display_version[0])
-            pos += snprintf(buf + pos, sizeof(buf) - pos, " (%s)", s_display_version);
-        if (s_arch[0])
-            pos += snprintf(buf + pos, sizeof(buf) - pos, "  |  %s", s_arch);
-        print_block("OS", buf);
-    }
-}
-
-const char* get_os_product(void)
-{
-    init_os_info();
-    return s_product;
-}
-
-const char* get_os_build(void)
-{
-    init_os_info();
-    return s_build;
-}
-
-const char* get_os_display_version(void)
-{
-    init_os_info();
-    return s_display_version;
+    debug_log("resolved product = '%s'", s->os_product);
+    debug_end();
 }

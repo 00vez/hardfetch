@@ -1,161 +1,209 @@
 #include "shell.h"
-#include "output.h"
+#include "debug.h"
 
+#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 #include <winver.h>
-#include <tlhelp32.h>
+
 
 #pragma comment(lib, "version.lib")
 
-static void lower_str(wchar_t* s)
+static void lower_copy(wchar_t* dst, size_t n, const wchar_t* src)
 {
-    for (; *s; s++) { if (*s >= L'A' && *s <= L'Z') *s += 32; }
+    size_t i;
+    wcsncpy_s(dst, n, src, _TRUNCATE);
+    for (i = 0; dst[i]; i++)
+        if (dst[i] >= L'A' && dst[i] <= L'Z') dst[i] += 32;
 }
 
-static int get_parent_full_path(wchar_t* outPath, size_t outPathSize)
+/* NtQueryInformationProcess gives the parent pid directly; a
+   CreateToolhelp32Snapshot walk costs several milliseconds per call and the
+   old code took one snapshot per ancestor. */
+typedef LONG (WINAPI* PFN_NtQueryInformationProcess)(HANDLE, int, PVOID, ULONG, PULONG);
+
+static DWORD parent_of(DWORD pid)
 {
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap == INVALID_HANDLE_VALUE) return -1;
+    static PFN_NtQueryInformationProcess fn = NULL;
+    static int resolved = 0;
+    typedef struct { ULONG_PTR ExitStatus; PVOID PebBaseAddress;
+                     ULONG_PTR AffinityMask; LONG BasePriority;
+                     ULONG_PTR UniqueProcessId; ULONG_PTR InheritedFromUniqueProcessId; } BASIC_INFO;
+    BASIC_INFO info;
 
-    DWORD ourPid = GetCurrentProcessId();
-    DWORD parentPid = 0;
-
-    PROCESSENTRY32W pe = { sizeof(pe) };
-    if (Process32FirstW(hSnap, &pe)) {
-        do {
-            if (pe.th32ProcessID == ourPid) {
-                parentPid = pe.th32ParentProcessID;
-                break;
-            }
-        } while (Process32NextW(hSnap, &pe));
+    if (!resolved) {
+        HMODULE nt = GetModuleHandleA("ntdll.dll");
+        resolved = 1;
+        if (nt)
+            fn = (PFN_NtQueryInformationProcess)GetProcAddress(nt, "NtQueryInformationProcess");
     }
-    CloseHandle(hSnap);
+    if (!fn) return 0;
 
-    if (!parentPid) return -1;
-
-    HANDLE hParent = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, parentPid);
-    if (!hParent) return -1;
-
-    DWORD pathLen = (DWORD)outPathSize;
-    int ret = QueryFullProcessImageNameW(hParent, 0, outPath, &pathLen) ? 0 : -1;
-    CloseHandle(hParent);
-    return ret;
+    {
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        DWORD parent = 0;
+        if (!h) return 0;
+        ZeroMemory(&info, sizeof(info));
+        if (fn(h, 0 /*ProcessBasicInformation*/, &info, sizeof(info), NULL) == 0)
+            parent = (DWORD)(ULONG_PTR)info.InheritedFromUniqueProcessId;
+        CloseHandle(h);
+        return parent;
+    }
 }
 
-static const char* detect_shell_name(wchar_t* fullPath, size_t fullPathSize)
+static bool exe_of_pid(DWORD pid, wchar_t* out, size_t outLen)
 {
-    if (get_parent_full_path(fullPath, fullPathSize) != 0) return "";
+    HANDLE h;
+    DWORD len = (DWORD)outLen;
 
-    wchar_t copy[1024];
-    wcsncpy_s(copy, 1024, fullPath, _TRUNCATE);
-    lower_str(copy);
+    out[0] = 0;
+    h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return false;
+    if (!QueryFullProcessImageNameW(h, 0, out, &len)) {
+        CloseHandle(h);
+        out[0] = 0;
+        return false;
+    }
+    CloseHandle(h);
+    return true;
+}
 
-    if (wcsstr(copy, L"pwsh"))
-        return "PowerShell";
-    if (wcsstr(copy, L"powershell"))
-        return "Windows PowerShell";
-    if (wcsstr(copy, L"cmd"))
-        return "cmd";
-    if (wcsstr(copy, L"bash"))
-        return "bash";
-    if (wcsstr(copy, L"wsl"))
-        return "WSL";
+/* Shells and console hosts that sit between the terminal and the program. */
+static bool is_intermediate(const wchar_t* lowerExe)
+{
+    static const wchar_t* names[] = {
+        L"pwsh.exe", L"powershell.exe", L"cmd.exe", L"bash.exe", L"zsh.exe",
+        L"conhost.exe", L"openconsole.exe", L"mintty.exe", L"sh.exe", L"fish.exe",
+        L"nu.exe", L"pwsh-preview.exe", L"windowsterminal.exe"
+    };
+    size_t i;
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (wcsstr(lowerExe, names[i])) return true;
+    return false;
+}
+
+static const char* shell_from_exe(const wchar_t* lowerExe)
+{
+    if (wcsstr(lowerExe, L"pwsh-preview")) return "PowerShell Preview";
+    if (wcsstr(lowerExe, L"pwsh")) return "PowerShell";
+    if (wcsstr(lowerExe, L"powershell")) return "Windows PowerShell";
+    if (wcsstr(lowerExe, L"cmd")) return "cmd";
+    if (wcsstr(lowerExe, L"bash")) return "bash";
+    if (wcsstr(lowerExe, L"zsh")) return "zsh";
+    if (wcsstr(lowerExe, L"fish")) return "fish";
+    if (wcsstr(lowerExe, L"nu")) return "nushell";
     return "";
 }
 
-static void get_file_version(const wchar_t* exePath, char* outVer, size_t outVerSize)
-{
-    outVer[0] = '\0';
-    DWORD handle = 0;
-    DWORD verSize = GetFileVersionInfoSizeExW(FILE_VER_GET_LOCALISED, exePath, &handle);
-    if (verSize == 0) return;
-
-    void* verBuf = malloc(verSize);
-    if (!verBuf) return;
-
-    if (GetFileVersionInfoExW(FILE_VER_GET_LOCALISED, exePath, handle, verSize, verBuf)) {
-        VS_FIXEDFILEINFO* vinfo = NULL;
-        UINT vinfoSize = 0;
-        if (VerQueryValueW(verBuf, L"\\", (void**)&vinfo, &vinfoSize) && vinfo) {
-            unsigned int parts[4];
-            parts[0] = (vinfo->dwFileVersionMS >> 16) & 0xFFFF;
-            parts[1] = vinfo->dwFileVersionMS & 0xFFFF;
-            parts[2] = (vinfo->dwFileVersionLS >> 16) & 0xFFFF;
-            parts[3] = vinfo->dwFileVersionLS & 0xFFFF;
-
-            int last = 2;
-            while (last > 0 && parts[last] == 0) last--;
-            int pos = 0;
-            for (int i = 0; i <= last; i++)
-                pos += snprintf(outVer + pos, outVerSize - pos, "%s%u", i > 0 ? "." : "", parts[i]);
-        }
-    }
-
-    free(verBuf);
-}
-
-static int get_ps_version_from_reg(const char* subkey, char* outVer, size_t outVerSize)
+static void reg_ps_version(const char* subkey, char* out, size_t outLen)
 {
     HKEY hKey;
+    DWORD size = (DWORD)outLen;
+    out[0] = '\0';
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, subkey, 0, KEY_READ, &hKey) != ERROR_SUCCESS)
-        return -1;
-    DWORD size = (DWORD)outVerSize;
-    int ret = -1;
-    if (RegQueryValueExA(hKey, "PowerShellVersion", NULL, NULL, (LPBYTE)outVer, &size) == ERROR_SUCCESS)
-        ret = 0;
+        return;
+    if (RegQueryValueExA(hKey, "PowerShellVersion", NULL, NULL, (LPBYTE)out, &size) != ERROR_SUCCESS)
+        out[0] = '\0';
     RegCloseKey(hKey);
-    return ret;
 }
 
-void print_shell_info(void)
+static void file_version(const wchar_t* path, char* out, size_t outLen)
 {
-    wchar_t fullPath[1024] = {0};
-    const char* shell = detect_shell_name(fullPath, 1024);
-    if (!shell[0]) return;
+    DWORD handle = 0;
+    DWORD size;
+    void* buf;
+    size_t len;
 
-    int is_pwsh = 0;
-    {
-        wchar_t copy[1024];
-        wcsncpy_s(copy, 1024, fullPath, _TRUNCATE);
-        lower_str(copy);
-        is_pwsh = (wcsstr(copy, L"pwsh") != NULL);
+    out[0] = '\0';
+    size = GetFileVersionInfoSizeExW(FILE_VER_GET_LOCALISED, path, &handle);
+    if (size == 0) return;
+    buf = malloc(size);
+    if (!buf) return;
+    if (GetFileVersionInfoExW(FILE_VER_GET_LOCALISED, path, handle, size, buf)) {
+        VS_FIXEDFILEINFO* info = NULL;
+        UINT infoSize = 0;
+        if (VerQueryValueW(buf, L"\\", (void**)&info, &infoSize) && info) {
+            unsigned int parts[4];
+            parts[0] = HIWORD(info->dwFileVersionMS);
+            parts[1] = LOWORD(info->dwFileVersionMS);
+            parts[2] = HIWORD(info->dwFileVersionLS);
+            parts[3] = LOWORD(info->dwFileVersionLS);
+            len = 0;
+            {
+                int last = 3;
+                while (last > 0 && parts[last] == 0) last--;
+                for (int i = 0; i <= last; i++)
+                    len += (size_t)snprintf(out + len, outLen - len, "%s%u", i ? "." : "", parts[i]);
+            }
+        }
     }
+    free(buf);
+}
 
-    char version[128] = {0};
-
-    if (is_pwsh) {
-        get_ps_version_from_reg("SOFTWARE\\Microsoft\\PowerShellCore\\3\\PowerShellEngine",
-                                version, sizeof(version));
-        if (!version[0])
-            get_file_version(fullPath, version, sizeof(version));
-    } else if (strcmp(shell, "Windows PowerShell") == 0) {
-        get_ps_version_from_reg("SOFTWARE\\Microsoft\\PowerShell\\3\\PowerShellEngine",
-                                version, sizeof(version));
-        if (!version[0])
-            get_ps_version_from_reg("SOFTWARE\\Microsoft\\PowerShell\\1\\PowerShellEngine",
-                                    version, sizeof(version));
-    } else {
-        get_file_version(fullPath, version, sizeof(version));
+static void trim_trailing_zeros(char* v)
+{
+    size_t len = strlen(v);
+    while (len > 1 && v[len - 1] == '0') {
+        if (v[len - 2] == '.') { len--; break; }
+        len--;
     }
+    while (len > 0 && v[len - 1] == '.') len--;
+    v[len] = '\0';
+}
 
-    size_t len = strlen(version);
-    while (len > 0 && (version[len - 1] == '0' || version[len - 1] == '.')) {
-        if (len > 1 && version[len - 2] == '.' && version[len - 1] == '0')
-            { len--; }
-        else if (version[len - 1] == '.')
-            { len--; }
-        else
+void shell_collect(hf_state* s)
+{
+    DWORD pid = GetCurrentProcessId();
+    wchar_t exePath[MAX_PATH];
+    wchar_t lower[MAX_PATH];
+
+    debug_begin("shell");
+
+    snprintf(s->shell_name, sizeof(s->shell_name), "%s", "");
+    s->shell_version[0] = '\0';
+    exePath[0] = L'\0';
+
+    /* Walk up until a non-shell ancestor is found. */
+    for (int depth = 0; depth < 8 && pid != 0; depth++) {
+        DWORD parent = parent_of(pid);
+        wchar_t candidate[MAX_PATH];
+        if (parent == 0) break;
+        if (!exe_of_pid(parent, candidate, MAX_PATH)) break;
+        lower_copy(lower, MAX_PATH, candidate);
+        debug_log("ancestor %lu '%ls'", (unsigned long)parent, lower);
+        if (!is_intermediate(lower)) {
+            wcsncpy_s(exePath, MAX_PATH, candidate, _TRUNCATE);
             break;
+        }
+        pid = parent;
     }
-    version[len] = '\0';
 
-    char buf[256];
-    if (version[0])
-        snprintf(buf, sizeof(buf), "%s %s", shell, version);
-    else
-        snprintf(buf, sizeof(buf), "%s", shell);
-    print_block("Shell", buf);
+    if (exePath[0]) {
+        const char* name = shell_from_exe(lower);
+        if (name[0]) {
+            snprintf(s->shell_name, sizeof(s->shell_name), "%s", name);
+            if (wcsstr(lower, L"pwsh")) {
+                reg_ps_version("SOFTWARE\\Microsoft\\PowerShellCore\\3\\PowerShellEngine",
+                               s->shell_version, sizeof(s->shell_version));
+                if (!s->shell_version[0]) file_version(exePath, s->shell_version, sizeof(s->shell_version));
+            } else if (wcsstr(lower, L"powershell")) {
+                reg_ps_version("SOFTWARE\\Microsoft\\PowerShell\\3\\PowerShellEngine",
+                               s->shell_version, sizeof(s->shell_version));
+                if (!s->shell_version[0])
+                    reg_ps_version("SOFTWARE\\Microsoft\\PowerShell\\1\\PowerShellEngine",
+                                   s->shell_version, sizeof(s->shell_version));
+            } else {
+                file_version(exePath, s->shell_version, sizeof(s->shell_version));
+            }
+            trim_trailing_zeros(s->shell_version);
+            debug_log("shell = '%s' '%s'", s->shell_name, s->shell_version);
+        } else {
+            debug_log("ancestor '%ls' is not a known shell", lower);
+        }
+    } else {
+        debug_log("no non-shell ancestor found");
+    }
+
+    debug_end();
 }

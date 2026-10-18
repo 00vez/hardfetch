@@ -1,269 +1,400 @@
 #include "gpu.h"
-#include "output.h"
+#include "debug.h"
 
 #include <cstdio>
 #include <cstring>
+#include <vector>
+#include <algorithm>
 #include <windows.h>
-#include <wbemidl.h>
 
-#pragma comment(lib, "wbemuuid.lib")
-#pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "oleaut32.lib")
+/* ------------------------------------------------------------------ *
+ * D3DKMT: the SDK's shared/d3dkmthk.h does not compile in user-mode C,
+ * so the small set of structures actually used is declared here and
+ * checked with static_assert below.
+ * ------------------------------------------------------------------ */
 
-// --- Minimal NVML dynamic loading ---
-typedef enum { NVML_SUCCESS = 0 } nvmlReturn_t;
-struct nvmlDevice;
-typedef struct nvmlDevice* nvmlDevice_t;
-typedef enum { NVML_TEMPERATURE_GPU = 0 } nvmlTemperatureSensors_t;
-typedef struct { unsigned int version; unsigned long long total; unsigned long long free; unsigned long long used; } nvmlMemory_v2_t;
-enum { nvmlMemory_v2_internal = (unsigned int)(sizeof(nvmlMemory_v2_t) | (2 << 24U)) };
-typedef struct { unsigned long long total; unsigned long long free; unsigned long long used; } nvmlMemory_t;
-typedef enum { NVML_CLOCK_GRAPHICS = 0, NVML_CLOCK_MEM = 2 } nvmlClockType_t;
-typedef struct { unsigned int gpu; unsigned int memory; } nvmlUtilization_t;
+#pragma warning(push)
+#pragma warning(disable : 4201)   /* anonymous unions are fixed by the D3DKMT ABI */
 
-typedef nvmlReturn_t (*PFN_nvmlInit_v2)(void);
-typedef nvmlReturn_t (*PFN_nvmlShutdown)(void);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetCount_v2)(unsigned int*);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetHandleByIndex_v2)(unsigned int, nvmlDevice_t*);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetName)(nvmlDevice_t, char*, unsigned int);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetMaxClockInfo)(nvmlDevice_t, nvmlClockType_t, unsigned int*);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetUtilizationRates)(nvmlDevice_t, nvmlUtilization_t*);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetMemoryInfo)(nvmlDevice_t, nvmlMemory_t*);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetTemperature)(nvmlDevice_t, nvmlTemperatureSensors_t, unsigned int*);
-typedef nvmlReturn_t (*PFN_nvmlDeviceGetPowerUsage)(nvmlDevice_t, unsigned int*);
+typedef struct { DWORD LowPart; LONG HighPart; } HF_LUID;
+typedef union { struct { UINT Instance : 6; UINT Index : 24; UINT Unique : 2; }; UINT Value; } HF_KMT_HANDLE;
+typedef struct { HF_KMT_HANDLE hAdapter; HF_LUID AdapterLuid; ULONG NumOfSources; BOOL bPrecisePresentRegionsPreferred; } HF_ADAPTERINFO;
+typedef struct { ULONG NumAdapters; HF_ADAPTERINFO* pAdapters; } HF_ENUMADAPTERS2;
+typedef struct { HF_KMT_HANDLE hAdapter; int Type; void* pPrivateDriverData; UINT PrivateDriverDataSize; } HF_QUERYADAPTERINFO;
+typedef struct { WCHAR AdapterString[260]; WCHAR BiosString[260]; WCHAR DacType[260]; WCHAR ChipType[260]; } HF_ADAPTERREGISTRYINFO;
+typedef struct { UINT BusNumber, DeviceNumber, FunctionNumber; } HF_ADAPTERADDRESS;
+typedef struct { UINT VendorID, DeviceID, SubVendorID, SubSystemID, RevisionID, BusType; } HF_DEVICE_IDS;
+typedef struct { UINT PhysicalAdapterIndex; HF_DEVICE_IDS DeviceIds; } HF_QUERY_DEVICE_IDS;
+typedef struct { ULONGLONG DedicatedVideoMemorySize, DedicatedSystemMemorySize, SharedSystemMemorySize; } HF_SEGMENTSIZEINFO;
+/* Anonymous union inside a struct: a documented MSVC extension, and the
+   layout is fixed by the D3DKMT ABI, so the warning is suppressed here. */
+#pragma warning(push)
+#pragma warning(disable : 4201)
+typedef struct {
+    union {
+        struct {
+            UINT RenderSupported : 1;
+            UINT DisplaySupported : 1;
+            UINT SoftwareDevice : 1;
+            UINT PostDevice : 1;
+            UINT HybridDiscrete : 1;
+            UINT HybridIntegrated : 1;
+            UINT IndirectDisplayDevice : 1;
+            UINT Paravirtualized : 1;
+            UINT ACGSupported : 1;
+            UINT SupportSetTimingsFromVidPn : 1;
+            UINT Detachable : 1;
+            UINT ComputeOnly : 1;
+            UINT Reserved2 : 20;
+        } Bits;
+        unsigned u;
+    } A;
+} HF_ADAPTERTYPE;
+#pragma warning(pop)
 
-static struct {
-    HMODULE dll;
-    PFN_nvmlInit_v2 pfnInit;
-    PFN_nvmlShutdown pfnShutdown;
-    PFN_nvmlDeviceGetCount_v2 pfnGetCount;
-    PFN_nvmlDeviceGetHandleByIndex_v2 pfnGetHandle;
-    PFN_nvmlDeviceGetName pfnGetName;
-    PFN_nvmlDeviceGetMaxClockInfo pfnGetClock;
-    PFN_nvmlDeviceGetUtilizationRates pfnGetUtil;
-    PFN_nvmlDeviceGetMemoryInfo pfnGetMem;
-    PFN_nvmlDeviceGetTemperature pfnGetTemp;
-    PFN_nvmlDeviceGetPowerUsage pfnGetPower;
-} nv = {0};
-
-static int load_nvml(void)
-{
-    if (nv.dll) return 1;
-    nv.dll = LoadLibraryA("nvml.dll");
-    if (!nv.dll) return 0;
-    nv.pfnInit     = (PFN_nvmlInit_v2)GetProcAddress(nv.dll, "nvmlInit_v2");
-    nv.pfnShutdown = (PFN_nvmlShutdown)GetProcAddress(nv.dll, "nvmlShutdown");
-    nv.pfnGetCount = (PFN_nvmlDeviceGetCount_v2)GetProcAddress(nv.dll, "nvmlDeviceGetCount_v2");
-    nv.pfnGetHandle= (PFN_nvmlDeviceGetHandleByIndex_v2)GetProcAddress(nv.dll, "nvmlDeviceGetHandleByIndex_v2");
-    nv.pfnGetName  = (PFN_nvmlDeviceGetName)GetProcAddress(nv.dll, "nvmlDeviceGetName");
-    nv.pfnGetClock = (PFN_nvmlDeviceGetMaxClockInfo)GetProcAddress(nv.dll, "nvmlDeviceGetMaxClockInfo");
-    nv.pfnGetUtil  = (PFN_nvmlDeviceGetUtilizationRates)GetProcAddress(nv.dll, "nvmlDeviceGetUtilizationRates");
-    nv.pfnGetMem   = (PFN_nvmlDeviceGetMemoryInfo)GetProcAddress(nv.dll, "nvmlDeviceGetMemoryInfo");
-    nv.pfnGetTemp  = (PFN_nvmlDeviceGetTemperature)GetProcAddress(nv.dll, "nvmlDeviceGetTemperature");
-    nv.pfnGetPower = (PFN_nvmlDeviceGetPowerUsage)GetProcAddress(nv.dll, "nvmlDeviceGetPowerUsage");
-    if (!nv.pfnInit || !nv.pfnShutdown || !nv.pfnGetCount ||
-        !nv.pfnGetHandle || !nv.pfnGetName) {
-        FreeLibrary(nv.dll); nv.dll = NULL;
-        return 0;
-    }
-    return 1;
-}
-
-static void unload_nvml(void)
-{
-    if (nv.dll) { FreeLibrary(nv.dll); nv.dll = NULL; memset(&nv, 0, sizeof(nv)); }
-}
-
-// --- WMI GPU enumeration ---
-static BSTR mb(const wchar_t* s) { return SysAllocString(s); }
-
-struct GpuEntry {
-    wchar_t name[256];
-    unsigned long long vramBytes;
-    int isNvidia;
+#define HF_MAX_ENUM_ADAPTERS 16
+enum {
+    HF_KMTQAITYPE_GETSEGMENTSIZE = 3,
+    HF_KMTQAITYPE_ADAPTERADDRESS = 6,
+    HF_KMTQAITYPE_ADAPTERREGISTRYINFO = 8,
+    HF_KMTQAITYPE_ADAPTERTYPE = 15,
+    HF_KMTQAITYPE_PHYSICALADAPTERDEVICEIDS = 31
 };
 
-static int enum_gpus(GpuEntry* entries, int maxEntries)
+static_assert(sizeof(HF_ADAPTERINFO) == 20, "D3DKMT_ADAPTERINFO layout");
+static_assert(sizeof(HF_ENUMADAPTERS2) == 16, "D3DKMT_ENUMADAPTERS2 layout");
+static_assert(sizeof(HF_ADAPTERREGISTRYINFO) == 2080, "D3DKMT_ADAPTERREGISTRYINFO layout");
+static_assert(sizeof(HF_QUERY_DEVICE_IDS) == 28, "D3DKMT_QUERY_DEVICE_IDS layout");
+static_assert(sizeof(HF_SEGMENTSIZEINFO) == 24, "D3DKMT_SEGMENTSIZEINFO layout");
+static_assert(sizeof(HF_ADAPTERTYPE) == 4, "D3DKMT_ADAPTERTYPE layout");
+
+typedef LONG (WINAPI* PFN_D3DKMTEnumAdapters2)(HF_ENUMADAPTERS2*);
+typedef LONG (WINAPI* PFN_D3DKMTQueryAdapterInfo)(HF_QUERYADAPTERINFO*);
+
+namespace {
+
+bool query(HF_ADAPTERINFO info, int type, void* out, ULONG size)
 {
-    int count = 0;
-    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    bool comInited = SUCCEEDED(hr);
-    if (!comInited && hr != RPC_E_CHANGED_MODE) return 0;
+    static PFN_D3DKMTQueryAdapterInfo fn = NULL;
+    static bool resolved = false;
+    if (!resolved) {
+        resolved = true;
+        HMODULE gdi = GetModuleHandleA("gdi32.dll");
+        if (gdi)
+            fn = (PFN_D3DKMTQueryAdapterInfo)GetProcAddress(gdi, "D3DKMTQueryAdapterInfo");
+    }
+    if (!fn) return false;
+    HF_QUERYADAPTERINFO q;
+    q.hAdapter = info.hAdapter;
+    q.Type = type;
+    q.pPrivateDriverData = out;
+    q.PrivateDriverDataSize = size;
+    return fn(&q) >= 0;
+}
 
-    IWbemLocator* pLoc = NULL;
-    if (FAILED(CoCreateInstance(CLSID_WbemLocator, NULL, CLSCTX_INPROC_SERVER,
-            IID_IWbemLocator, (void**)&pLoc)))
-        { if (comInited) CoUninitialize(); return 0; }
+/* ------------------------------- NVML ------------------------------- */
 
-    IWbemServices* pSvc = NULL;
-    BSTR ns = mb(L"ROOT\\CIMV2");
-    hr = pLoc->ConnectServer(ns, NULL, NULL, NULL, 0, NULL, NULL, &pSvc);
-    SysFreeString(ns);
-    if (FAILED(hr)) { pLoc->Release(); if (comInited) CoUninitialize(); return 0; }
+typedef int nvmlReturn_t;
+typedef struct nvmlDevice_st* nvmlDevice_t;
+typedef enum { NVML_TEMPERATURE_GPU = 0 } nvmlTemperatureSensors_t;
+typedef enum { NVML_CLOCK_GRAPHICS = 0, NVML_CLOCK_MEM = 2 } nvmlClockType_t;
+typedef struct { unsigned int gpu; unsigned int memory; } nvmlUtilization_t;
+typedef struct { unsigned long long total; unsigned long long free; unsigned long long used; } nvmlMemory_t;
+/* nvmlPciInfo_t as of NVML 2.x: 16-byte legacy bus id string, five
+   unsigned ints, then a 32-byte bus id string. */
+typedef struct {
+    char          busIdLegacy[16];
+    unsigned int  domain;
+    unsigned int  bus;
+    unsigned int  device;
+    unsigned int  pciDeviceId;      /* (deviceId << 16) | vendorId */
+    unsigned int  pciSubSystemId;
+    char          busId[32];
+} nvmlPciInfoShim;
 
-    CoSetProxyBlanket(pSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
-        RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlInit)(void);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlShutdown)(void);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlCount)(unsigned int*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlHandleByIndex)(unsigned int, nvmlDevice_t*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlHandleByPciBusId)(const char*, nvmlDevice_t*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlName)(nvmlDevice_t, char*, unsigned int);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlPciInfo)(nvmlDevice_t, nvmlPciInfoShim*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlClock)(nvmlDevice_t, nvmlClockType_t, unsigned int*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlUtil)(nvmlDevice_t, nvmlUtilization_t*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlMem)(nvmlDevice_t, nvmlMemory_t*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlTemp)(nvmlDevice_t, nvmlTemperatureSensors_t, unsigned int*);
+typedef nvmlReturn_t (WINAPI* PFN_nvmlPower)(nvmlDevice_t, unsigned int*);
 
-    BSTR wql = mb(L"WQL");
-    BSTR q = mb(L"SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController");
-    IEnumWbemClassObject* pEnum = NULL;
-    hr = pSvc->ExecQuery(wql, q, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &pEnum);
-    SysFreeString(wql); SysFreeString(q);
+struct Nvml {
+    HMODULE dll;
+    bool ready;
+    PFN_nvmlInit init;
+    PFN_nvmlShutdown shutdown;
+    PFN_nvmlCount count;
+    PFN_nvmlHandleByIndex handleByIndex;
+    PFN_nvmlHandleByPciBusId handleByPciBusId;
+    PFN_nvmlName name;
+    PFN_nvmlPciInfo pciInfo;
+    PFN_nvmlClock clock;
+    PFN_nvmlUtil util;
+    PFN_nvmlMem mem;
+    PFN_nvmlTemp temp;
+    PFN_nvmlPower power;
 
-    if (SUCCEEDED(hr) && pEnum) {
-        IWbemClassObject* pObj = NULL;
-        ULONG ret = 0;
-        while (count < maxEntries && pEnum->Next(WBEM_INFINITE, 1, &pObj, &ret) == S_OK && ret > 0) {
-            GpuEntry* e = &entries[count];
-            e->name[0] = L'\0'; e->vramBytes = 0; e->isNvidia = 0;
-
-            VARIANT vt;
-            VariantInit(&vt);
-            if (SUCCEEDED(pObj->Get(L"Name", 0, &vt, NULL, NULL)) && vt.vt == VT_BSTR)
-                wcsncpy_s(e->name, 256, vt.bstrVal, _TRUNCATE);
-            VariantClear(&vt);
-
-            VariantInit(&vt);
-            if (SUCCEEDED(pObj->Get(L"AdapterRAM", 0, &vt, NULL, NULL))) {
-                if (vt.vt == VT_UI4) e->vramBytes = vt.uiVal;
-                else if (vt.vt == VT_UI8) e->vramBytes = vt.ullVal;
-            }
-            VariantClear(&vt);
-
-            VARIANT vtId;
-            VariantInit(&vtId);
-            if (SUCCEEDED(pObj->Get(L"PNPDeviceID", 0, &vtId, NULL, NULL)) && vtId.vt == VT_BSTR) {
-                if (wcsstr(vtId.bstrVal, L"VEN_10DE"))
-                    e->isNvidia = 1;
-            }
-            VariantClear(&vtId);
-
-            if (e->name[0] && wcsstr(e->name, L"NVIDIA"))
-                e->isNvidia = 1;
-
-            pObj->Release();
-            count++;
+    Nvml()
+    {
+        ZeroMemory(this, sizeof(*this));
+        dll = LoadLibraryA("nvml.dll");
+        if (!dll) {
+            debug_log("nvml.dll not present, no NVIDIA metrics");
+            return;
         }
-        pEnum->Release();
+        init = (PFN_nvmlInit)GetProcAddress(dll, "nvmlInit_v2");
+        shutdown = (PFN_nvmlShutdown)GetProcAddress(dll, "nvmlShutdown");
+        count = (PFN_nvmlCount)GetProcAddress(dll, "nvmlDeviceGetCount_v2");
+        handleByIndex = (PFN_nvmlHandleByIndex)GetProcAddress(dll, "nvmlDeviceGetHandleByIndex_v2");
+        handleByPciBusId = (PFN_nvmlHandleByPciBusId)GetProcAddress(dll, "nvmlDeviceGetHandleByPciBusId_v2");
+        name = (PFN_nvmlName)GetProcAddress(dll, "nvmlDeviceGetName");
+        pciInfo = (PFN_nvmlPciInfo)GetProcAddress(dll, "nvmlDeviceGetPciInfo_v3");
+        clock = (PFN_nvmlClock)GetProcAddress(dll, "nvmlDeviceGetClockInfo");
+        util = (PFN_nvmlUtil)GetProcAddress(dll, "nvmlDeviceGetUtilizationRates");
+        mem = (PFN_nvmlMem)GetProcAddress(dll, "nvmlDeviceGetMemoryInfo");
+        temp = (PFN_nvmlTemp)GetProcAddress(dll, "nvmlDeviceGetTemperature");
+        power = (PFN_nvmlPower)GetProcAddress(dll, "nvmlDeviceGetPowerUsage");
+
+        if (!init || !shutdown || !count || !handleByIndex) {
+            debug_log("nvml.dll present but required exports missing");
+            FreeLibrary(dll);
+            dll = NULL;
+            return;
+        }
+        if (init() == 0) {
+            ready = true;
+            debug_log("nvml ready, pciInfo_v3=%s pciBusId=%s clockInfo=%s",
+                      pciInfo ? "yes" : "no", handleByPciBusId ? "yes" : "no",
+                      clock ? "yes" : "no");
+        } else {
+            debug_log("nvmlInit_v2 failed");
+            FreeLibrary(dll);
+            dll = NULL;
+        }
     }
 
-    pSvc->Release(); pLoc->Release();
-    if (comInited) CoUninitialize();
-    return count;
+    ~Nvml()
+    {
+        if (ready) shutdown();
+        if (dll) FreeLibrary(dll);
+    }
+};
+
+void pci_bus_id_string(const hf_gpu* g, char* out, size_t n)
+{
+    snprintf(out, n, "%04x:%02x:%02x.%u", g->domain, g->bus, g->device, g->func);
 }
 
-static int has_substr(const char* s, const char* sub)
+/* Attach NVML metrics to the adapter whose PCI address matches. */
+bool attach_nvml(Nvml& nvml, hf_gpu* g)
 {
-    return strstr(s, sub) != NULL;
+    nvmlDevice_t dev = NULL;
+    char busId[32];
+    char name[160] = {0};
+
+    if (!nvml.ready) return false;
+    if (g->vendor_id != 0x10DE) return false;
+    if (g->func > 0xF) return false;   /* not a PCI device */
+
+    if (nvml.handleByPciBusId) {
+        pci_bus_id_string(g, busId, sizeof(busId));
+        if (nvml.handleByPciBusId(busId, &dev) == 0 && dev) {
+            debug_log("gpu '%s' matched via pciBusId %s", g->name, busId);
+        } else {
+            dev = NULL;
+            debug_log("no NVML device for pciBusId %s", busId);
+        }
+    }
+
+    if (!dev && nvml.pciInfo && nvml.count) {
+        unsigned int total = 0;
+        if (nvml.count(&total) == 0) {
+            for (unsigned int i = 0; i < total; i++) {
+                nvmlDevice_t candidate = NULL;
+                nvmlPciInfoShim info;
+                ZeroMemory(&info, sizeof(info));
+                if (nvml.handleByIndex(i, &candidate) != 0 || !candidate) continue;
+                if (nvml.pciInfo(candidate, &info) != 0) continue;
+                unsigned int want = (g->device_id << 16) | g->vendor_id;
+                if (info.pciDeviceId == want) {
+                    dev = candidate;
+                    debug_log("gpu '%s' matched via pciDeviceId %08X (index %u)",
+                              g->name, want, i);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!dev) return false;
+
+    g->have_nvml = 1;
+    if (nvml.name)
+        nvml.name(dev, name, sizeof(name));
+    if (nvml.clock) {
+        if (nvml.clock(dev, NVML_CLOCK_GRAPHICS, &g->core_mhz) != 0) g->core_mhz = 0;
+        if (nvml.clock(dev, NVML_CLOCK_MEM, &g->mem_mhz) != 0) g->mem_mhz = 0;
+    }
+    if (nvml.util) {
+        nvmlUtilization_t u;
+        ZeroMemory(&u, sizeof(u));
+        if (nvml.util(dev, &u) == 0) g->load_pct = u.gpu;
+    }
+    if (nvml.mem) {
+        nvmlMemory_t m;
+        ZeroMemory(&m, sizeof(m));
+        if (nvml.mem(dev, &m) == 0) {
+            g->vram_used = m.used;
+            g->vram_total = m.total;
+        }
+    }
+    if (nvml.temp) {
+        unsigned int t = 0;
+        if (nvml.temp(dev, NVML_TEMPERATURE_GPU, &t) == 0) g->temp_c = t;
+    }
+    if (nvml.power) {
+        unsigned int mw = 0;
+        if (nvml.power(dev, &mw) == 0) g->power_w = mw / 1000;
+    }
+
+    debug_log("nvml metrics: core=%u mem=%u load=%u%% vram=%llu/%llu temp=%u power=%uW",
+              g->core_mhz, g->mem_mhz, g->load_pct,
+              g->vram_used, g->vram_total, g->temp_c, g->power_w);
+    return true;
 }
 
-void print_gpu_info(void)
+} /* namespace */
+
+void gpu_collect(hf_state* s)
 {
-    GpuEntry entries[8];
-    int gpuCount = enum_gpus(entries, 8);
-    if (gpuCount == 0) {
-        print_block("GPU", "[No GPU detected]");
+    PFN_D3DKMTEnumAdapters2 pEnum = NULL;
+    HMODULE gdi;
+    HF_ADAPTERINFO adapters[HF_MAX_ENUM_ADAPTERS];
+    HF_ENUMADAPTERS2 ea;
+    Nvml nvml;
+    LONG st;
+
+    debug_begin("gpu");
+
+    gdi = LoadLibraryA("gdi32.dll");
+    if (!gdi) {
+        debug_log("gdi32.dll load failed: %s", debug_win32(GetLastError()));
+        s->gpu_count = 0;
+        return;
+    }
+    pEnum = (PFN_D3DKMTEnumAdapters2)GetProcAddress(gdi, "D3DKMTEnumAdapters2");
+    if (!pEnum) {
+        debug_log("D3DKMTEnumAdapters2 missing");
+        FreeLibrary(gdi);
+        s->gpu_count = 0;
         return;
     }
 
-    int nvmlOk = load_nvml();
+    ZeroMemory(adapters, sizeof(adapters));
+    ea.NumAdapters = HF_MAX_ENUM_ADAPTERS;
+    ea.pAdapters = adapters;
+    st = pEnum(&ea);
+    if (st < 0) {
+        debug_log("D3DKMTEnumAdapters2 failed: 0x%08lX", (unsigned long)st);
+        FreeLibrary(gdi);
+        s->gpu_count = 0;
+        return;
+    }
+    debug_log("D3DKMTEnumAdapters2 -> %lu adapters", (unsigned long)ea.NumAdapters);
 
-    unsigned int nvCount = 0;
-    char nvNames[8][256];
-    int nvmlInited = 0;
-    if (nvmlOk && nv.pfnInit() == NVML_SUCCESS) {
-        nvmlInited = 1;
-        if (nv.pfnGetCount(&nvCount) == NVML_SUCCESS && nvCount > 8) nvCount = 8;
-        for (unsigned int ni = 0; ni < nvCount; ni++) {
-            nvNames[ni][0] = '\0';
-            nvmlDevice_t dev;
-            if (nv.pfnGetHandle(ni, &dev) == NVML_SUCCESS && nv.pfnGetName)
-                nv.pfnGetName(dev, nvNames[ni], sizeof(nvNames[ni]));
+    for (ULONG i = 0; i < ea.NumAdapters && s->gpu_count < HF_MAX_GPUS; i++) {
+        HF_ADAPTERADDRESS addr;
+        HF_QUERY_DEVICE_IDS qids;
+        HF_SEGMENTSIZEINFO seg;
+        HF_ADAPTERTYPE atype;
+        HF_ADAPTERREGISTRYINFO reg;
+        hf_gpu* g = &s->gpus[s->gpu_count];
+
+        ZeroMemory(g, sizeof(*g));
+        ZeroMemory(&addr, sizeof(addr));
+        ZeroMemory(&qids, sizeof(qids));
+        ZeroMemory(&seg, sizeof(seg));
+        ZeroMemory(&atype, sizeof(atype));
+        ZeroMemory(&reg, sizeof(reg));
+
+        if (!query(adapters[i], HF_KMTQAITYPE_ADAPTERREGISTRYINFO, &reg, sizeof(reg)))
+            continue;
+        if (!WideCharToMultiByte(CP_UTF8, 0, reg.AdapterString, -1,
+                                 g->name, (int)sizeof(g->name), NULL, NULL))
+            continue;
+        if (g->name[0] == '\0') {
+            debug_log("adapter %lu has no name, skipped", (unsigned long)i);
+            continue;
         }
+
+        if (query(adapters[i], HF_KMTQAITYPE_ADAPTERTYPE, &atype, sizeof(atype))) {
+            g->software = atype.A.Bits.SoftwareDevice ? 1 : 0;
+            if (g->software) {
+                debug_log("adapter '%s' is a software device, skipped", g->name);
+                continue;
+            }
+            g->integrated = atype.A.Bits.HybridIntegrated ? 1 : 0;
+            if (!g->integrated && atype.A.Bits.HybridDiscrete)
+                g->integrated = 0;
+        }
+
+        if (query(adapters[i], HF_KMTQAITYPE_ADAPTERADDRESS, &addr, sizeof(addr))) {
+            if (addr.FunctionNumber <= 0xF) {
+                g->domain = 0;
+                g->bus = addr.BusNumber;
+                g->device = addr.DeviceNumber;
+                g->func = addr.FunctionNumber;
+            } else {
+                g->func = 0xFFFF;   /* not on PCI */
+            }
+        } else {
+            g->func = 0xFFFF;
+        }
+
+        if (query(adapters[i], HF_KMTQAITYPE_PHYSICALADAPTERDEVICEIDS, &qids, sizeof(qids))) {
+            g->vendor_id = qids.DeviceIds.VendorID;
+            g->device_id = qids.DeviceIds.DeviceID;
+        }
+
+        if (query(adapters[i], HF_KMTQAITYPE_GETSEGMENTSIZE, &seg, sizeof(seg)))
+            g->vram_total = seg.DedicatedVideoMemorySize;
+
+        debug_log("adapter '%s' bus=%u:%u.%u ven=%04X dev=%04X %s dedicated=%llu",
+                  g->name, g->bus, g->device, g->func, g->vendor_id, g->device_id,
+                  g->integrated ? "integrated" : "discrete", g->vram_total);
+
+        s->gpu_count++;
     }
 
-    for (int i = 0; i < gpuCount; i++) {
-        GpuEntry* e = &entries[i];
-        char nameBuf[256] = {0};
-        WideCharToMultiByte(CP_UTF8, 0, e->name, -1, nameBuf, sizeof(nameBuf), NULL, NULL);
+    FreeLibrary(gdi);
 
-        int isIntegrated = 0;
-        if (!e->isNvidia) {
-            if (has_substr(nameBuf, "Radeon(TM) Graphics") ||
-                has_substr(nameBuf, "Intel(R)") ||
-                has_substr(nameBuf, "UHD Graphics") ||
-                has_substr(nameBuf, "Iris"))
-                isIntegrated = 1;
-        }
-
-        double vramGiB = e->vramBytes / (1024.0 * 1024.0 * 1024.0);
-        double vramMiB = e->vramBytes / (1024.0 * 1024.0);
-
-        char label[32];
-        snprintf(label, sizeof(label), "GPU %d", i + 1);
-
-        // Build main line
-        char mainLine[512];
-        int pos = 0;
-        pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, "%s", nameBuf);
-
-        // Match WMI GPU to NVML by name substring
-        int nvIdx = -1;
-        if (e->isNvidia && nvmlInited) {
-            for (unsigned int ni = 0; ni < nvCount; ni++) {
-                if (nvNames[ni][0] && has_substr(nvNames[ni], nameBuf + strlen(nameBuf) - 8))
-                    { nvIdx = (int)ni; break; }
-                if (nvNames[ni][0] && has_substr(nameBuf, nvNames[ni]))
-                    { nvIdx = (int)ni; break; }
-            }
-            if (nvIdx < 0) {
-                int nvidiaBefore = 0;
-                for (int j = 0; j < i; j++) { if (entries[j].isNvidia) nvidiaBefore++; }
-                if ((unsigned int)nvidiaBefore < nvCount) nvIdx = nvidiaBefore;
-            }
-        }
-
-        unsigned int coreClock = 0;
-        if (nvIdx >= 0 && nvmlInited) {
-            nvmlDevice_t dev;
-            if (nv.pfnGetHandle((unsigned int)nvIdx, &dev) == NVML_SUCCESS && nv.pfnGetClock)
-                nv.pfnGetClock(dev, NVML_CLOCK_GRAPHICS, &coreClock);
-        }
-
-        if (coreClock > 0)
-            pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " @ %.2f GHz", coreClock / 1000.0);
-
-        if (vramGiB >= 1.0)
-            pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " (%.2f GiB)", vramGiB);
-        else if (vramMiB > 0)
-            pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " (%.2f MiB)", vramMiB);
-
-        pos += snprintf(mainLine + pos, sizeof(mainLine) - pos, " [%s]", isIntegrated ? "Integrated" : "Discrete");
-
-        print_block_green(label, mainLine);
-
-        // Detail line for NVIDIA: Core | Mem | Load | VRAM | Temp | Power
-        if (nvIdx >= 0 && nvmlInited) {
-            nvmlDevice_t dev;
-            if (nv.pfnGetHandle((unsigned int)nvIdx, &dev) == NVML_SUCCESS) {
-                unsigned int memClock = 0, util = 0, temp = 0, powerMw = 0;
-                double vramUsed = 0, vramTotal = 0;
-
-                if (nv.pfnGetClock) nv.pfnGetClock(dev, NVML_CLOCK_MEM, &memClock);
-                if (nv.pfnGetUtil) { nvmlUtilization_t u; if (nv.pfnGetUtil(dev, &u) == NVML_SUCCESS) util = u.gpu; }
-                if (nv.pfnGetMem) { nvmlMemory_t m; if (nv.pfnGetMem(dev, &m) == NVML_SUCCESS) { vramUsed = m.used / (1024.0*1024.0*1024.0); vramTotal = m.total / (1024.0*1024.0*1024.0); } }
-                if (nv.pfnGetTemp) nv.pfnGetTemp(dev, NVML_TEMPERATURE_GPU, &temp);
-                if (nv.pfnGetPower) { nv.pfnGetPower(dev, &powerMw); }
-
-                char detail[512];
-                snprintf(detail, sizeof(detail),
-                    "Core %u MHz  |  Mem %u MHz  |  Load %u%%  |  VRAM %.1f / %.1f GiB  |  Temp %u\xc2\xb0""C  |  Power %u W",
-                    coreClock, memClock, util, vramUsed, vramTotal, temp, powerMw / 1000);
-                print_detail(detail);
+    /* Discrete adapters first, matching the primary-card-first display. */
+    for (int a = 0; a < s->gpu_count; a++) {
+        for (int b = a + 1; b < s->gpu_count; b++) {
+            if (s->gpus[a].integrated && !s->gpus[b].integrated) {
+                hf_gpu tmp = s->gpus[a];
+                s->gpus[a] = s->gpus[b];
+                s->gpus[b] = tmp;
             }
         }
     }
 
-    if (nvmlInited) nv.pfnShutdown();
-    unload_nvml();
+    for (int i = 0; i < s->gpu_count; i++) {
+        if (s->gpus[i].integrated) continue;
+        attach_nvml(nvml, &s->gpus[i]);
+    }
+
+    for (int i = 0; i < s->gpu_count; i++)
+        debug_log("final gpu[%d] '%s' %s nvml=%d", i, s->gpus[i].name,
+                  s->gpus[i].integrated ? "integrated" : "discrete",
+                  s->gpus[i].have_nvml);
+
+    debug_end();
 }
