@@ -345,29 +345,14 @@ static void render_network(const hf_state* s)
     snprintf(label, sizeof(label), "IP (Public)");
     print_row(label, s->ip_public[0] ? s->ip_public : "N/A");
 
-    /* The remaining adapters follow the public IP. The block itself starts in
-       the value column; inside it the names are right aligned on the longest
-       one so every address lands in the same column. ip_collect already put
-       them in alphabetical order. */
-    if (s->ip_local[0] && s->ip_iface_count > 0) {
-        int width = 0;
-        int i;
-
-        for (i = 0; i < s->ip_iface_count; i++) {
-            int len = (int)strlen(s->ip_ifaces[i].label);
-            if (len > width) width = len;
-        }
-
-        for (i = 0; i < s->ip_iface_count; i++) {
+    /* The remaining adapters follow the public IP, one per row, name left
+       aligned in the value column like every other detail line. ip_collect
+       already put them in alphabetical order. */
+    if (s->ip_local[0]) {
+        for (int i = 0; i < s->ip_iface_count; i++) {
             char line[192];
-            int len = (int)strlen(s->ip_ifaces[i].label);
-            int used;
-
-            snprintf(line, sizeof(line), "%*s%s", width - len, "",
-                     s->ip_ifaces[i].label);
-            used = (int)strlen(line);
-            snprintf(line + used, sizeof(line) - (size_t)used,
-                     "  %s", s->ip_ifaces[i].value);
+            snprintf(line, sizeof(line), "%s  %s",
+                     s->ip_ifaces[i].label, s->ip_ifaces[i].value);
             print_row_detail(line);
         }
     }
