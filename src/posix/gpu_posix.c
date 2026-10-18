@@ -197,7 +197,7 @@ static const char* vendor_name(unsigned int v)
         case 0x8086: return "Intel";
         case 0x14E4: return "Broadcom";
         case 0x1969: return "Qualcomm";
-        case 0x1B36: return "QEMU";      /* Red Hat / QEMU virtual display */
+        case 0x1B36: return "Red Hat";   /* QXL paravirtual display */
         case 0x1AF4: return "Virtio";
         case 0x1234: return "QEMU";      /* standard VGA */
         case 0x1111: return "QEMU";

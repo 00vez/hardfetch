@@ -13,7 +13,15 @@ extern "C" {
 
 /* stdout and stderr are in text mode, so the CRT already turns a bare LF
    into CRLF on Windows. Emitting an explicit CR here would produce CR CR LF. */
+/* Windows text mode already turns a bare LF into CRLF, so adding
+   one here would produce CR CR LF. On POSIX nothing does that
+   translation, and a terminal reached over ssh without ONLCR keeps
+   the column and merges consecutive lines. */
+#ifdef _WIN32
 #define OUTPUT_NL "\n"
+#else
+#define OUTPUT_NL "\r\n"
+#endif
 
 void output_init(void);
 
