@@ -3,15 +3,22 @@
 
 #include "hf_state.h"
 
-/* Registry CurrentBuildNumber.UBR, shown as the "Build" row. */
-void kernel_collect_build(hf_state* s);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/* PEB version triple + UBR, shown as the "Kernel" row. */
+/* Windows collectors. */
+
+void kernel_collect_build(hf_state* s);
 void kernel_collect_kernel(hf_state* s);
 
-
-/* Legacy entry points, still used by the frozen POSIX build in src/posix/.
+/* Legacy entry points, still used by the frozen POSIX build in src/posix.
    They are implemented there, not in the Windows sources. */
+
 void print_kernel_info(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

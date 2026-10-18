@@ -70,6 +70,7 @@ void print_header(const char* text)
     printf("\x1b[1;92m%s\x1b[0m" OUTPUT_NL, text ? text : "");
 }
 
+#ifdef _WIN32
 /* The screen control below uses the Win32 console API rather than escape
    sequences. Escape sequences are not honoured on every console setup, which
    left stale text from the previous frame on screen. */
@@ -145,6 +146,8 @@ int output_quit_requested(void)
     }
     return 0;
 }
+
+#endif /* _WIN32 */
 
 /* ---------------- legacy layout (frozen POSIX build) ---------------- */
 
