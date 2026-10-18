@@ -42,7 +42,8 @@ typedef pthread_t hf_thread;
 #include "posix/apple_smc.h"
 #endif
 
-#define PUBLIC_IP_TIMEOUT_MS 250
+#define PUBLIC_IP_TIMEOUT_MS  250
+#define PUBLIC_IP_DEADLINE_MS 600
 #define WORKER_DEADLINE_MS  3000
 #define LIVE_DEFAULT_INTERVAL 1
 
@@ -348,8 +349,10 @@ int main(int argc, char** argv)
     memory_collect_spd(&s);
     cpu_temp_collect(&s);
 
+    /* Started before the collection so it overlaps with it. Nothing waits
+       for it beyond a bounded join right before the first frame. */
     if (o.show_all)
-        public_ip_fetch(&s, PUBLIC_IP_TIMEOUT_MS);
+        public_ip_start(&s, PUBLIC_IP_TIMEOUT_MS);
 
     if (worker) {
         thread_join_bounded(worker);
@@ -357,6 +360,9 @@ int main(int argc, char** argv)
     }
 
     cpu_sample_end(&s);
+
+    if (o.show_all)
+        public_ip_join(&s, PUBLIC_IP_DEADLINE_MS);
 
     if (!o.live) {
         render(&s, o.show_all);

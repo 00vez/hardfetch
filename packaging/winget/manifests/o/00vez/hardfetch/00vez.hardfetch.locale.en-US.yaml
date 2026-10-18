@@ -1,0 +1,25 @@
+PackageIdentifier: 00vez.hardfetch
+PackageLocale: en-US
+Publisher: 00vez
+PublisherUrl: https://github.com/00vez
+PublisherSupportUrl: https://github.com/00vez/hardfetch/issues
+License: MIT
+LicenseUrl: https://github.com/00vez/hardfetch/blob/master/LICENSE
+ShortDescription: Compact system info tool, neofetch style, in C
+Description: |-
+  hardfetch prints operating system, board, uptime, CPU, RAM, GPU, disk,
+  network and display information in a compact block, in the spirit of
+  neofetch. A single statically linked executable of about 214 KB that needs
+  no configuration and starts in roughly 28 milliseconds.
+PackageFamilyName: hardfetch
+PackageUrl: https://github.com/00vez/hardfetch
+ReleaseNotesUrl: https://github.com/00vez/hardfetch/releases/tag/3.3
+ManifestType: locale
+ManifestVersion: 1.4
+Tags:
+- cli
+- system
+- hardware
+ReleaseNotes: |-
+  Linux and WSL2 now produce the same layout as Windows through a shared
+  renderer.

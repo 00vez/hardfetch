@@ -22,16 +22,16 @@ void storage_collect(hf_state* s)
         ssize_t n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
         if (n > 0) {
             exe[n] = 0;
-            char* slash = strrchr(exe, '/');
-            if (slash && slash != exe) {
-                *slash = 0;
-                slash = strrchr(exe, '/');
-                if (slash) {
-                    if (slash == exe) slash[1] = 0;
-                    else *slash = 0;
-                    snprintf(s->disk_volume, sizeof(s->disk_volume), "%s", exe);
-                }
+            /* The mount point is the directory holding the executable, so
+               exactly one component comes off. Stripping two turned
+               /home/user/bin/hardfetch into /home/u. */
+            {
+                char* slash = strrchr(exe, '/');
+                if (slash == exe) slash[1] = 0;       /* executable in / */
+                else if (slash) *slash = 0;
             }
+            snprintf(s->disk_volume, sizeof(s->disk_volume), "%.*s",
+                     (int)sizeof(s->disk_volume) - 1, exe);
             debug_log("executable path volume '%s'", s->disk_volume);
         }
     }

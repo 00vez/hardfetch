@@ -67,7 +67,7 @@ typedef struct {
     unsigned int ram_modules;
     unsigned long long ram_module_bytes;
 
-    char        disk_volume[8];
+    char        disk_volume[64];   /* 8 was too small: /home/user truncated to /home/u */
     unsigned long long disk_used, disk_total;
 
     hf_gpu      gpus[HF_MAX_GPUS];

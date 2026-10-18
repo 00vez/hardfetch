@@ -13,6 +13,8 @@ void uptime_collect(hf_state* s)
 {
     double up = 0;
 
+    debug_begin("uptime");
+
 #if defined(__APPLE__)
     struct timeval boottime;
     size_t len = sizeof(boottime);
@@ -35,4 +37,5 @@ void uptime_collect(hf_state* s)
     s->uptime_secs_live = s->uptime_secs;
 
     debug_log("uptime %llu s", s->uptime_secs);
+    debug_end();
 }

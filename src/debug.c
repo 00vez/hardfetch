@@ -12,6 +12,27 @@
 
 static int s_enabled = 0;
 
+/* Main and the worker both log, so a whole line has to be written under one
+   lock or the two threads cut each other's output in half. */
+#ifdef _WIN32
+#include <windows.h>
+static CRITICAL_SECTION s_out;
+static INIT_ONCE s_out_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK init_out_once(PINIT_ONCE o, PVOID p, PVOID* c)
+{
+    (void)o; (void)p; (void)c;
+    InitializeCriticalSection(&s_out);
+    return TRUE;
+}
+static void out_lock(void)  { InitOnceExecuteOnce(&s_out_once, init_out_once, NULL, NULL); EnterCriticalSection(&s_out); }
+static void out_unlock(void){ LeaveCriticalSection(&s_out); }
+#else
+#include <pthread.h>
+static pthread_mutex_t s_out = PTHREAD_MUTEX_INITIALIZER;
+static void out_lock(void)   { pthread_mutex_lock(&s_out); }
+static void out_unlock(void) { pthread_mutex_unlock(&s_out); }
+#endif
+
 /* The module name and start time are per thread: main and the worker both
    log, and shared state would interleave and mislabel them. */
 #if defined(_MSC_VER)
@@ -71,11 +92,13 @@ void debug_log(const char* fmt, ...)
     va_list ap;
 
     if (!s_enabled) return;
+    out_lock();
     fprintf(stderr, "[%-8s] ", s_module);
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputs(OUTPUT_NL, stderr);
+    out_unlock();
 }
 
 void debug_end(void)
@@ -84,7 +107,9 @@ void debug_end(void)
 
     if (!s_enabled) return;
     ms = monotonic_ms() - s_start_ms;
+    out_lock();
     fprintf(stderr, "[%-8s] --- %.2f ms" OUTPUT_NL, s_module, ms);
+    out_unlock();
 }
 
 void debug_raw(const char* label, const void* data, size_t len)
@@ -93,6 +118,7 @@ void debug_raw(const char* label, const void* data, size_t len)
     size_t i, j;
 
     if (!s_enabled || !p) return;
+    out_lock();
     fprintf(stderr, "[%-8s] %s (%zu bytes):" OUTPUT_NL,
             s_module, label ? label : "raw", len);
     for (i = 0; i < len; i += 16) {
@@ -106,6 +132,7 @@ void debug_raw(const char* label, const void* data, size_t len)
             fputc(p[i + j] >= 32 && p[i + j] < 127 ? (int)p[i + j] : '.', stderr);
         fputs(OUTPUT_NL, stderr);
     }
+    out_unlock();
 }
 
 #ifdef _WIN32

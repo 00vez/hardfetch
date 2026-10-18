@@ -3,22 +3,13 @@
 
 #include "hf_state.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* The lookup never blocks the first frame. It is started as early as
+   possible and collected later with a deadline; if nothing came back in time
+   the row shows N/A. */
+void public_ip_start(hf_state* s, unsigned int timeoutMs);
 
-/* Windows collectors. */
-
-void public_ip_fetch(hf_state* s, unsigned int timeoutMs);
-
-/* Legacy entry points, still used by the frozen POSIX build in src/posix.
-   They are implemented there, not in the Windows sources. */
-
-void public_ip_start(void);
-void public_ip_print(void);
-
-#ifdef __cplusplus
-}
-#endif
+/* Waits at most waitMs for the lookup. Returns 1 when s->ip_public was
+   filled in, 0 when it is still running or failed. */
+int  public_ip_join(hf_state* s, unsigned int waitMs);
 
 #endif

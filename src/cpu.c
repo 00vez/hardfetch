@@ -44,23 +44,31 @@ void cpu_sample_end(hf_state* s)
     ULONGLONG idleD, kernelD, userD, totalD;
 
     s->cpu_load = 0.0;
-    if (!s_window_open) return;
+
+    debug_begin("load");
+    if (!s_window_open) { debug_log("no window"); debug_end(); return; }
     s_window_open = 0;
 
-    if (!GetSystemTimes(&idle2, &kernel2, &user2)) return;
+    if (!GetSystemTimes(&idle2, &kernel2, &user2)) {
+        debug_log("GetSystemTimes failed");
+        debug_end();
+        return;
+    }
 
     idleD = ft(&idle2) - ft(&s_idle1);
     kernelD = ft(&kernel2) - ft(&s_kernel1);
     userD = ft(&user2) - ft(&s_user1);
     totalD = kernelD + userD;          /* kernel time already includes idle */
 
-    if (totalD == 0) return;
+    if (totalD == 0) { debug_log("no usable delta"); debug_end(); return; }
+
     s->cpu_load = 1.0 - (double)idleD / (double)totalD;
     if (s->cpu_load < 0.0) s->cpu_load = 0.0;
     if (s->cpu_load > 1.0) s->cpu_load = 1.0;
 
-    debug_log("load window: idle=%llu kernel=%llu user=%llu total=%llu -> %.4f",
+    debug_log("window idle=%llu kernel=%llu user=%llu total=%llu -> %.4f",
               idleD, kernelD, userD, totalD, s->cpu_load);
+    debug_end();
 }
 
 /* ---------- static identity ---------- */
