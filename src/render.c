@@ -277,6 +277,35 @@ static void render_disk(const hf_state* s)
     print_row("Disk", line);
 }
 
+static void render_battery(const hf_state* s)
+{
+    char pct[16], state[24], temp[24], cycles[24], line[160];
+
+    if (!s->have_battery) return;
+
+    snprintf(pct, sizeof(pct), "%u%%", s->battery_pct);
+
+    state[0] = 0;
+    if (s->battery_charging)
+        snprintf(state, sizeof(state), "Charging");
+
+    temp[0] = 0;
+    if (s->battery_temp_c > 0)
+        fmt_temp(temp, sizeof(temp), s->battery_temp_c);
+
+    cycles[0] = 0;
+    if (s->battery_cycles > 0)
+        snprintf(cycles, sizeof(cycles), "%u Cycles", s->battery_cycles);
+
+    join_fields(line, sizeof(line), pct, state, temp);
+    if (cycles[0]) {
+        size_t len = strlen(line);
+        snprintf(line + len, sizeof(line) - len, " %s %s",
+                 output_separator(), cycles);
+    }
+    print_row("Battery", line);
+}
+
 static void render_display(const hf_state* s)
 {
     for (int i = 0; i < s->display_count; i++) {
@@ -377,6 +406,7 @@ void render(const hf_state* s, int options)
         print_newline();
 
     render_disk(s);
+    render_battery(s);
     render_display(s);
     render_network(s);
 }

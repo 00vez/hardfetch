@@ -89,6 +89,13 @@ typedef struct {
     /* ---- presentation ---- */
     int         options_all;
 
+    /* ---- battery ---- */
+    int          have_battery;
+    unsigned int battery_pct;
+    int          battery_charging;   /* 1 = charging on mains           */
+    int          battery_temp_c;     /* -1 when the platform has no sensor */
+    unsigned int battery_cycles;     /* 0 when unknown                  */
+
     /* ---- network ---- */
     char        ip_local[96];
     char        ip_label[24];

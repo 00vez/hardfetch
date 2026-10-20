@@ -1,0 +1,60 @@
+name: macos
+
+on:
+  push:
+    branches: [master]
+    tags: ["3.*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+            expect: arm64
+          - runner: macos-13
+            arch: x64
+            expect: x86_64
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j4
+
+      - name: Check architecture
+        run: |
+          lipo -archs build/hardfetch
+          got=$(lipo -archs build/hardfetch)
+          if [ "$got" != "${{ matrix.expect }}" ]; then
+            echo "expected ${{ matrix.expect }}, got $got"
+            exit 1
+          fi
+
+      # The runner is a real Mac, so the binary is run here and not only
+      # compiled. The output is the evidence for the release.
+      - name: Run
+        run: |
+          ./build/hardfetch    | tee output.txt
+          ./build/hardfetch -a | tee output-all.txt
+          ./build/hardfetch -d | tee output-debug.txt
+
+      - name: Checksum
+        run: shasum -a 256 build/hardfetch | tee sha256.txt
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardfetch-${{ matrix.arch }}-macos
+          path: |
+            build/hardfetch
+            sha256.txt
+            output.txt
+            output-all.txt
+            output-debug.txt

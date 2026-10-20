@@ -1,79 +1,97 @@
-#include "../output.h"
+#include "../battery.h"
+#include "../debug.h"
+
 #if defined(__APPLE__)
-#include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
 #endif
-#include <stdio.h>
-#include <string.h>
+
 #if !defined(__APPLE__)
-void print_battery_info(void){ print_block("Battery","N/A"); }
+
+/* Linux has no battery collector yet. The row stays out of the output
+   instead of showing a guess, same as on a desktop without a battery. */
+void battery_collect(hf_state* s)
+{
+    (void)s;
+    debug_log("battery: no collector on this platform");
+}
+
 #else
 
-static int read_smc_int(const char* key) {
-    int val = 0;
-    io_service_t svc = IOServiceGetMatchingService(0, IOServiceNameMatching("AppleSMC"));
-    if (svc) {
-        CFStringRef k = CFStringCreateWithCString(NULL, key, kCFStringEncodingUTF8);
-        if (k) {
-            CFDataRef d = (CFDataRef)IORegistryEntryCreateCFProperty(svc, k, kCFAllocatorDefault, 0);
-            if (d && CFGetTypeID(d) == CFDataGetTypeID()) {
-                int32_t i32 = 0;
-                if (CFNumberGetValue((CFNumberRef)d, kCFNumberSInt32Type, &i32)) val = (int)i32;
-                CFRelease(d);
+/* The battery is a single IOKit service, AppleSmartBattery. Everything the
+   row shows comes from there: the charge in percent from the capacity
+   pair, the charging state as a boolean, the temperature in hundredths of a
+   degree and the cycle count. A Mac without a battery has no such service,
+   and then the row is left out. */
+
+static int read_int(io_object_t svc, CFStringRef key, int32_t* out)
+{
+    CFTypeRef prop;
+    int32_t v = 0;
+    int ok = 0;
+
+    prop = IORegistryEntryCreateCFProperty(svc, key, kCFAllocatorDefault, 0);
+    if (prop) {
+        if (CFGetTypeID(prop) == CFNumberGetTypeID()) {
+            ok = CFNumberGetValue((CFNumberRef)prop, kCFNumberSInt32Type, &v);
+        } else if (CFGetTypeID(prop) == CFBooleanGetTypeID()) {
+            if (CFBooleanGetValue((CFBooleanRef)prop)) {
+                v = 1;
+                ok = 1;
             }
-            CFRelease(k);
         }
-        IOObjectRelease(svc);
+        CFRelease(prop);
     }
-    return val;
+    if (ok) *out = v;
+    return ok;
 }
 
-void print_battery_info(void) {
-    char out[256];
-    int pct = 0;
-    int tempC = 0;
-    int cycle = 0;
-    int charging = 0;
+void battery_collect(hf_state* s)
+{
+    CFMutableDictionaryRef matching;
+    io_object_t bat;
+    int32_t current = 0, maximum = 0, temperature = 0, cycles = 0, charging = 0;
 
-    /* Versuch AppleSmartBattery via IOKit */
-    io_service_t bat = IOServiceGetMatchingService(0, IOServiceNameMatching("AppleSmartBattery"));
-    if (bat) {
-        CFStringRef k1 = CFStringCreateWithCString(NULL, "BatteryChargeState", kCFStringEncodingUTF8);
-        if (k1) {
-            CFNumberRef n = (CFNumberRef)IORegistryEntryCreateCFProperty(bat, k1, kCFAllocatorDefault, 0);
-            if (n) {
-                int32_t s = 0;
-                if (CFNumberGetValue(n, kCFNumberSInt32Type, &s)) charging = s;
-                CFRelease(n);
-            }
-            CFRelease(k1);
-        }
-        IOObjectRelease(bat);
+    debug_begin("battery");
+
+    matching = IOServiceMatching("AppleSmartBattery");
+    if (!matching) {
+        debug_log("IOServiceMatching failed");
+        debug_end();
+        return;
+    }
+    bat = IOServiceGetMatchingService(kIOMainPortDefault, matching);
+    CFRelease(matching);
+    if (!bat) {
+        debug_log("no AppleSmartBattery");
+        debug_end();
+        return;
     }
 
-    /* SMC Keys für Batterie (range; M-Serie ähnlich) */
-    pct = read_smc_int("B0Th"); /* Versuch */
-    if (pct <= 0) pct = read_smc_int("VBAT");
-    tempC = read_smc_int("TB0T");
-    cycle = read_smc_int("CycleCount");
-    if (cycle <= 0) cycle = read_smc_int("B0Cy");
+    (void)read_int(bat, CFSTR("CurrentCapacity"), &current);
+    (void)read_int(bat, CFSTR("MaxCapacity"), &maximum);
+    (void)read_int(bat, CFSTR("IsCharging"), &charging);
+    (void)read_int(bat, CFSTR("Temperature"), &temperature);
+    (void)read_int(bat, CFSTR("CycleCount"), &cycles);
+    IOObjectRelease(bat);
 
-    if (pct > 0) {
-        snprintf(out, sizeof(out), "%d%%", pct);
-    } else {
-        snprintf(out, sizeof(out), "N/A");
+    if (maximum <= 0 || current < 0) {
+        debug_log("no capacity reported");
+        debug_end();
+        return;
     }
-    if (tempC >= 0) {
-        char temp_str[32];
-        snprintf(temp_str, sizeof(temp_str), " | Temp %d°C", tempC);
-        strncat(out, temp_str, sizeof(out) - strlen(out) - 1);
-    }
-    if (charging > 0) strncat(out, " [Charging]", sizeof(out) - strlen(out) - 1);
-    if (cycle > 0) {
-        char cyc[32];
-        snprintf(cyc, sizeof(cyc), " | Cycles %d", cycle);
-        strncat(out, cyc, sizeof(out) - strlen(out) - 1);
-    }
-    print_block("Battery", out[0] ? out : "N/A");
+
+    s->have_battery = 1;
+    s->battery_pct = (unsigned int)((current * 100 + maximum / 2) / maximum);
+    s->battery_charging = charging ? 1 : 0;
+    /* The sensor reports hundredths of a degree, and 0 means no reading. */
+    s->battery_temp_c = (temperature > 0) ? (int)(temperature / 100) : -1;
+    s->battery_cycles = (cycles > 0) ? (unsigned int)cycles : 0;
+
+    debug_log("battery %u%% charging=%d temp=%d cycles=%u",
+              s->battery_pct, s->battery_charging,
+              s->battery_temp_c, s->battery_cycles);
+    debug_end();
 }
+
 #endif

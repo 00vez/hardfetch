@@ -7,6 +7,10 @@
 #include <unistd.h>
 #include <pwd.h>
 
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
+
 static void read_trim(const char* path, char* out, size_t n)
 {
     FILE* f;
@@ -55,11 +59,23 @@ void host_collect(hf_state* s)
 {
     debug_begin("host");
 
+#if defined(__APPLE__)
+    /* macOS has no DMI. The model identifier is the same string the system
+       information shows, for example MacBookPro18,3. */
+    {
+        size_t len = sizeof(s->host);
+        if (sysctlbyname("hw.model", s->host, &len, NULL, 0) == 0 &&
+            len > 0 && len <= sizeof(s->host)) {
+            s->host[len - 1] = 0;
+        }
+    }
+#else
     read_trim("/sys/class/dmi/id/product_name", s->host, sizeof(s->host));
     if (!s->host[0])
         read_trim("/sys/devices/virtual/dmi/id/product_name", s->host, sizeof(s->host));
     if (!s->host[0])
         read_trim("/sys/class/dmi/id/board_name", s->host, sizeof(s->host));
+#endif
     if (!s->host[0])
         snprintf(s->host, sizeof(s->host), "%s", s->host_name);
 

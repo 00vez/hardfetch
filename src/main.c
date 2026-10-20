@@ -5,6 +5,7 @@
 #include "output.h"
 #include "render.h"
 
+#include "battery.h"
 #include "cpu.h"
 #include "cpu_temp.h"
 #include "display.h"
@@ -246,6 +247,7 @@ static void collect_static(hf_state* s)
     kernel_collect_kernel(s);
     host_collect(s);
     uptime_collect(s);
+    battery_collect(s);
     memory_collect_usage(s);
     storage_collect(s);
     ip_collect(s, s->options_all);
