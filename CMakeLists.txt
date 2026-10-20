@@ -71,7 +71,7 @@ else()
     # On macOS _POSIX_C_SOURCE alone hides the BSD types the system headers
     # use themselves, so the Darwin namespace is asked for explicitly.
     if(APPLE)
-        add_compile_definitions(_DARWIN_C_SOURCE)
+        add_compile_definitions(_DARWIN_C_SOURCE _POSIX_C_SOURCE=200809L)
     else()
         add_compile_definitions(_POSIX_C_SOURCE=200809L)
     endif()

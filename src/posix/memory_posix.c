@@ -7,6 +7,7 @@
 #include <string.h>
 
 #if defined(__APPLE__)
+#include <mach/mach.h>
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif

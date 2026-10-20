@@ -3,7 +3,6 @@
 #include "../debug.h"
 #include "../edid.h"
 
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -115,17 +114,14 @@ static void collect_apple(hf_state* s)
             d->width = (unsigned int)b.size.width;
             d->height = (unsigned int)b.size.height;
         }
-        /* CoreGraphics reports the diagonal of the panel in millimetres.
-           The width and height follow from it and the aspect ratio of the
-           mode, which is how the system derives them as well. */
+        /* CoreGraphics reports the physical size of the panel in
+           millimetres. Only the built-in panel and some external ones
+           report it, the rest come back at zero. */
         {
-            double diagonal = CGDisplayScreenSize(ids[i]);
-            if (diagonal > 0.0 && d->width > 0 && d->height > 0) {
-                double px = (double)d->width;
-                double py = (double)d->height;
-                double len = sqrt(px * px + py * py);
-                d->phys_w_mm = (unsigned int)(diagonal * px / len + 0.5);
-                d->phys_h_mm = (unsigned int)(diagonal * py / len + 0.5);
+            CGSize mm = CGDisplayScreenSize(ids[i]);
+            if (mm.width > 0.0 && mm.height > 0.0) {
+                d->phys_w_mm = (unsigned int)(mm.width + 0.5);
+                d->phys_h_mm = (unsigned int)(mm.height + 0.5);
             }
         }
         d->primary = (s->display_count == 0);
