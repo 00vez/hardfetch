@@ -107,6 +107,31 @@ th { border-bottom-color: #ddd; }
 
 <!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
 
+<h2>Protokoll vom 20.10.2026 (12. Session) — Archiv draussen, Build-Datei bei den Quellen</h2>
+<h3>Analyse und Befund</h3>
+<ul>
+<li class="warn"><strong>Das Archiv lag im Repository.</strong> Der Ordner stand unversioniert im Arbeitsbaum, 1 MB Binaries und Dokumente. Ein <code>mv</code> nach <code>C:\Users\v\Documents\lib\archiv</code> schlug mit <code>Device or resource busy</code> fehl und liess dabei beide Kopien unvollständig zurück. Der Inhalt ließ sich vollständig aus der Git-History und aus dem Release 1.0 auf GitHub wiederherstellen, es ging nichts verloren.</li>
+<li class="ok"><strong>Ein zweites Archiv</strong> unter dem Namen <code>archiv/</code> im Repository, ähnlich unvollständig, wurde mit dem externen vereinigt und aus dem Arbeitsbaum entfernt.</li>
+</ul>
+
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong>Archiv in die Gitignore</strong>, mit <code>archiv/</code>. Geprüft: eine Testdatei im Archiv-Ordner erscheint nicht mehr in <code>git status</code>.</li>
+<li class="ok"><strong>Build-Datei nach <code>src/CMakeLists.txt</code></strong>. Die Quellpfade sind jetzt relativ zu <code>src/</code>, das Include-Verzeichnis wird über <code>${CMAKE_CURRENT_SOURCE_DIR}/../include</code> erreicht. Der Build-Befehl lautet damit <code>cmake -B build -S src</code>, in README, AGENTS.md, Protokoll und macOS-Workflow angepasst.</li>
+<li class="ok"><strong>Download-Befehl im README verbessert:</strong> der Linux-Zweig matcht jetzt <code>Linux-x86_64</code> statt <code>Linux-*</code>, weil es kein arm64-Linux-Binary gibt und der alte Zweig auf einem Raspberry Pi ein fremdes Binary geladen hätte. Eine nicht unterstützte Plattform bricht mit einer Meldung ab, statt eine leere URL zu ergeben. Geprüft an FreeBSD, Linux aarch64 und einer vorhandenen Datei, die dabei unverändert blieb.</li>
+</ul>
+
+<h3>Verifikation</h3>
+<ul>
+<li class="ok">Windows und Linux bauen nach dem Umzug der Build-Datei, beide ohne Warnung, beide melden <code>v3.5</code>.</li>
+<li class="ok">Der Download-Befehl wurde wörtlich aus dem README gezogen und in vier Fällen ausgeführt: Linux x86_64 laedt das ELF-Binary, FreeBSD und Linux aarch64 brechen mit einer Meldung ab und legen keine Datei an, eine vorhandene Datei bleibt unverändert.</li>
+</ul>
+
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Noch nicht committet. Der Nutzer hat Commits und Pushes bis zur eigenen Prüfung untersagt.</li>
+</ul>
+
 <h2>Protokoll vom 20.10.2026 (11. Session) — Aufräumen: GitHub-Seiten und Repo schlanker</h2>
 <h3>Analyse und Befund</h3>
 <ul>
@@ -117,7 +142,7 @@ th { border-bottom-color: #ddd; }
 
 <h3>Implementierung</h3>
 <ul>
-<li class="ok"><strong>Archiv vor dem Löschen:</strong> <code>C:\Users\v\Documents\lib\hardfetch-archiv\</code> mit den alten Releases samt Metadaten, <code>edits.txt</code>, <code>export.md</code>, <code>release-notes-3.4.md</code>, dem historischen <code>plan.md</code>-Teil und <code>progress.html</code>. Nichts ging verloren, alles liegt außerhalb des Repos.</li>
+<li class="ok"><strong>Archiv vor dem Löschen:</strong> <code>C:\Users\v\Documents\lib\archiv\</code> mit den alten Releases samt Metadaten, <code>edits.txt</code>, <code>export.md</code>, <code>release-notes-3.4.md</code>, dem historischen <code>plan.md</code>-Teil und <code>progress.html</code>. Nichts ging verloren, alles liegt außerhalb des Repos.</li>
 <li class="ok"><strong>Aus dem Repo entfernt:</strong> <code>edits.txt</code>, <code>export.md</code>, <code>release-notes-3.4.md</code>, <code>docs/superpowers/</code>, <code>bin/</code> mit allen vier Binaries. <code>plan.md</code> auf den aktuellen Teil gekürzt (4,5 KB), <code>progress.html</code> nach <code>docs/</code> verschoben.</li>
 <li class="ok"><strong>README auf 60 Zeilen:</strong> Badges, Beispielausgabe, ein Install-Einzeiler je Shell, Flag-Tabelle, kompakte Plattformtabelle, Build, Lizenz. Die ausführlichen Erklärungen liegen in <code>AGENTS.md</code>.</li>
 <li class="ok"><strong>Neue Installationswege:</strong> <code>install.sh</code> und <code>install.ps1</code>. Sie erkennen die Plattform aus <code>uname</code> beziehungsweise fest, laden aus <code>releases/latest/download</code> und prüfen das Binary gegen <code>SHA256SUMS</code>, bevor sie es nach <code>~/.local/bin</code> beziehungsweise <code>%LOCALAPPDATA%\Programs\hardfetch</code> legen.</li>
@@ -409,17 +434,20 @@ th { border-bottom-color: #ddd; }
 <li>Repo: <code>C:\Users\v\Documents\lib\hardfetch</code>, Remote <code>github.com/00vez/hardfetch</code>, Branch <code>master</code>.</li>
 <li>Gemeinsam für beide Plattformen: <code>src/main.c</code> (Einstieg, Flags, Threads, Live-Loop), <code>src/render.c</code> (gesamte Ausgabe), <code>src/fmt.c</code>, <code>src/edid.c</code>, <code>src/output.c</code>, <code>src/debug.c</code>, <code>src/hf_state.c</code>.</li>
 <li>Nur Windows: <code>os_info.c</code>, <code>host.c</code>, <code>kernel.c</code>, <code>uptime.c</code>, <code>shell.c</code>, <code>terminal.c</code>, <code>memory.c</code>, <code>storage.c</code>, <code>ip_addr.c</code>, <code>public_ip.c</code>, <code>display.c</code>, <code>cpu.c</code> sowie <code>memory_spd.cpp</code>, <code>cpu_temp.cpp</code>, <code>gpu.cpp</code> für WMI und COM.</li>
-<li>Nur POSIX: <code>src/posix/</code> mit denselben Modulnamen. Der POSIX-Zweig in <code>CMakeLists.txt</code> listet jetzt dieselben gemeinsamen Dateien wie der Windows-Zweig.</li>
+<li>Nur POSIX: <code>src/posix/</code> mit denselben Modulnamen. Der POSIX-Zweig in <code>src/CMakeLists.txt</code> listet jetzt dieselben gemeinsamen Dateien wie der Windows-Zweig.</li>
 <li>Tot: <code>src/gpu_nvidia.c</code> und <code>src/gpu_nvidia.h</code>, in keinem Target mehr enthalten.</li>
 <li>Packaging: <code>packaging/scoop/</code>, <code>packaging/winget/</code>, <code>packaging/brew/</code>. Die veroeffentlichten Notizen liegen in den Release-Bodies auf GitHub.</li>
 <li><code>docs/progress.html</code> dieses Protokoll, mit Projektziel, Architekturentscheidungen, Datenquellen je Plattform, Gotchas und dem Verlauf jeder Session. Lesen mit <code>cath docs/progress.html</code>.</li>
 <li>Die vorgebauten Binaries liegen nicht im Repository, sondern in den Releases mit <code>SHA256SUMS</code> daneben.</li>
+<li>Das lokale Archiv der entfernten Releases und Dokumente liegt ausserhalb des Repos in <code>C:\Users\v\Documents\lib\archiv\</code> und steht im <code>gitignore</code>.</li>
 </ul>
 
 <h2>Build, Tests und Skripte</h2>
 <ul>
-<li><code>cmake -B build -A x64</code> und <code>cmake --build build --config Release</code> für Windows.</li>
-<li>Linux über WSL: <code>cmake -B build-wsl -S . -DCMAKE_BUILD_TYPE=Release</code> und <code>cmake --build build-wsl -j4</code>.</li>
+<li>Die Build-Datei liegt in <code>src/CMakeLists.txt</code>, das Quellverzeichnis ist damit <code>src</code>.</li>
+<li><code>cmake -B build -S src -A x64</code> und <code>cmake --build build --config Release</code> für Windows.</li>
+<li>Linux über WSL: <code>cmake -B build-wsl -S src -DCMAKE_BUILD_TYPE=Release</code> und <code>cmake --build build-wsl -j4</code>.</li>
+<li>macOS: <code>cmake -B build-arm64 -S src -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64</code> und dasselbe mit <code>x86_64</code>.</li>
 <li><code>hrf</code> als PowerShell-Alias. <code>HF_ASAN=ON</code> baut eine AddressSanitizer-Variante; die DLL liegt im Verzeichnis der MSVC-Tools.</li>
 <li>Kein Testframework. Verifikation läuft über Flag-Matrix, Ausgabevergleich und Messungen auf der Zielmaschine.</li>
 <li class="warn">Nicht inkrementell bauen. Zwei Warnungen und ein gemeinsamer Header-Fehler fielen erst nach <code>--clean-first</code> auf, weil CMake Objektdateien wiederverwendet. Vor jeder Abnahme sauber bauen.</li>
