@@ -58,7 +58,7 @@ th { border-bottom-color: #ddd; }
 <li class="ok">Display liefert Name und Größe auf beiden Plattformen. Windows liest das EDID-Blob aus dem Registry, Linux aus <code>/sys/class/drm/</code>; Parser gegen das echte AOC3202-Blob geprüft, <code>32G2WG8</code> / 31,5 Zoll.</li>
 <li class="ok">Kein Feld wird geraten: fehlt eine Quelle, entfällt die Zeile. Auf WSL fehlen deshalb CPU-Temperatur, zweite GPU und Display, weil keine Thermalzone und kein DRM-Konnektor existieren.</li>
 <li class="ok">Beide Builds ohne Warnung; AddressSanitizer sauber über Standardansicht und <code>-a</code>.</li>
-<li class="ok">Release-Binaries tragen SHA-256, die in <code>SHA256SUMS</code>, im scoop-Manifest, in beiden winget-Manifesten und der brew-Formel identisch stehen.</li>
+<li class="ok">Release-Binaries tragen SHA-256, die in <code>SHA256SUMS</code>, im scoop-Manifest, in den drei winget-Manifestdateien und der brew-Formel identisch stehen.</li>
 </ul>
 
 <h2>Aktueller Status — IST-Stand v3.4</h2>
@@ -78,7 +78,7 @@ th { border-bottom-color: #ddd; }
 <li class="todo">CPU-CAS-Latenz unter Windows: die meisten Firmwares melden sie nicht, und rohes SMBIOS ist gesperrt. Ohne gangbaren Weg.</li>
 <li class="todo">CI-Matrix (Windows, Ubuntu, macOS) fehlt. Zwei der drei Pfade sind bisher nur manuell geprueft.</li>
 <li class="todo">Schnellster Netzwerkpfad unter Linux: der Resolver der VM haengt zeitweise 5 s. Der Lookup ist heute begrenzt, das Ergebnis faellt dann auf <code>N/A</code> zurueck statt zu blockieren.</li>
-<li class="todo">winget-Manifest ist fertig, braucht aber einen PR nach <code>microsoft/winget-pkgs</code>, damit <code>winget install 00vez.hardfetch</code> ueberhaupt greift. Bisher nicht eingereicht.</li>
+<li class="todo">winget ist ueber <code>winget install 00vez.hardfetch</code> weiterhin nicht installierbar. Ein PR gegen <code>microsoft/winget-pkgs</code> wurde erstellt und auf Wunsch des Nutzers wieder zurueckgezogen, samt Fork. Das Manifest liegt fertig unter <code>packaging/winget/</code> und kann jederzeit neu eingereicht werden.</li>
 </ul>
 
 <!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
@@ -117,10 +117,20 @@ th { border-bottom-color: #ddd; }
 <li>Linux (Debian 13, 2 vCPUs): Standardansicht 20 ms, <code>-a</code> 155 ms.</li>
 <li>Beide Builds 0 Warnungen, AddressSanitizer sauber.</li>
 </ul>
-<h3>Packaging</h3>
+<h3>Packaging und der winget-Versuch</h3>
 <ul>
 <li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Pruefsummen schon oeffentlich verteilt waren und ein Ueberschreiben sie ungueltig machen wuerde.</li>
-<li class="ok">scoop laeuft direkt aus dem Manifest-URL ohne Bucket. winget-Manifest fertig und validiert, braucht aber einen PR fuer eine echte Paketquelle. brew-Formel deckt Linux ab.</li>
+<li class="ok">scoop laeuft direkt aus dem Manifest-URL ohne Bucket. brew-Formel deckt Linux ab.</li>
+<li class="warn">Der erste winget-Versuch war ein Single-File-Manifest mit <code>NestedInstallerType</code>, das winget 1.29 nicht annimmt. Der lokale Validator war keine Hilfe: <code>winget validate --manifest</code> meldete bei einem heruntergeladenen, veroeffentlichten Paket aus winget-pkgs genauso <code>multi file manifest is incomplete</code> wie bei unserem.</li>
+<li class="ok">Daher die Struktur von einem bestehenden Manifest im Repository abgeschrieben: Versionsdatei mit <code>DefaultLocale</code>, <code>defaultLocale</code>-Datei mit Publisher, Lizenz, Tags und Release Notes, <code>installer</code>-Datei als <code>portable</code> mit dem Befehlsalias <code>hrf</code>. Pfad <code>manifests/0/00vez/hardfetch/3.4/</code>.</li>
+<li class="ok">PR gegen <code>microsoft/winget-pkgs</code> erstellt, Nummer 455559. <code>Pull Request Validation</code> und <code>Manifest Validation</code> liefen gruen, die uebrigen Pruefungen waren noch offen.</li>
+<li class="warn">PR auf Wunsch des Nutzers zurueckgezogen und geschlossen, Branch im Fork geloescht, der Fork <code>00vez/winget-pkgs</code> besteht noch, weil das Token keine <code>delete_repo</code>-Berechtigung hat. Das Manifest liegt fertig im Baum und kann jederzeit neu eingereicht werden.</li>
+</ul>
+
+
+<ul>
+<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Pruefsummen schon oeffentlich verteilt waren und ein Ueberschreiben sie ungueltig machen wuerde.</li>
+<li class="ok">scoop laeuft direkt aus dem Manifest-URL ohne Bucket. brew-Formel deckt Linux ab. Das winget-Manifest liegt im kanonischen Multi-File-Layout, lokal aber nicht validierbar: <code>winget validate --manifest</code> meldet auf winget 1.29.380 auch fuer ein veroeffentlichtes Paket <code>incomplete</code>, die Struktur wurde deshalb von einem bestehenden Manifest im Repository abgeschrieben.</li>
 </ul>
 
 <h2>Protokoll vom 30.08.2026 (8. Session) — HID-Fallback für Temp N/A (M4)</h2>
