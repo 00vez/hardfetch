@@ -60,8 +60,10 @@ void battery_collect(hf_state* s)
         debug_end();
         return;
     }
+    /* IOServiceGetMatchingService consumes the reference of the matching
+       dictionary, so it must not be released here. Releasing it would
+       free the object a second time. */
     bat = IOServiceGetMatchingService(kIOMainPortDefault, matching);
-    CFRelease(matching);
     if (!bat) {
         debug_log("no AppleSmartBattery");
         debug_end();

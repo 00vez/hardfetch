@@ -38,12 +38,16 @@ jobs:
           fi
 
       # The runner is a real Mac, so the binary is run here and not only
-      # compiled. The output is the evidence for the release.
+      # compiled. The output is the evidence for the release. pipefail keeps
+      # a crash from hiding behind the exit code of tee.
       - name: Run
         run: |
-          ./build/hardfetch    | tee output.txt
-          ./build/hardfetch -a | tee output-all.txt
-          ./build/hardfetch -d | tee output-debug.txt
+          set -o pipefail
+          ./build/hardfetch    2>&1 | tee output.txt
+          ./build/hardfetch -a 2>&1 | tee output-all.txt
+          ./build/hardfetch -d 2>&1 | tee output-debug.txt
+          test -s output.txt
+          test -s output-all.txt
 
       - name: Checksum
         run: shasum -a 256 build/hardfetch | tee sha256.txt
