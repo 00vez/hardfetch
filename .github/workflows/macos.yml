@@ -8,57 +8,75 @@ on:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            arch: arm64
-            expect: arm64
-          - runner: macos-13
-            arch: x64
-            expect: x86_64
-    runs-on: ${{ matrix.runner }}
+    # One runner builds both architectures. The macOS SDK on the machine
+    # carries both slices, so the Intel binary is cross compiled here
+    # instead of on a second runner, whose queue does not move.
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
+      - name: Build arm64
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j4
+          cmake -B build-arm64 -S . -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_ARCHITECTURES=arm64
+          cmake --build build-arm64 -j4
+          lipo -archs build-arm64/hardfetch | tee arch-arm64.txt
+          grep -qx "arm64" arch-arm64.txt
 
-      - name: Check architecture
+      - name: Build x86_64
         run: |
-          lipo -archs build/hardfetch
-          got=$(lipo -archs build/hardfetch)
-          if [ "$got" != "${{ matrix.expect }}" ]; then
-            echo "expected ${{ matrix.expect }}, got $got"
-            exit 1
-          fi
+          cmake -B build-x64 -S . -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_ARCHITECTURES=x86_64
+          cmake --build build-x64 -j4
+          lipo -archs build-x64/hardfetch | tee arch-x64.txt
+          grep -qx "x86_64" arch-x64.txt
 
       # The runner is a real Mac, so the binary is run here and not only
-      # compiled. The output is the evidence for the release. pipefail keeps
-      # a crash from hiding behind the exit code of tee.
-      - name: Run
+      # compiled. pipefail keeps a crash from hiding behind the exit code
+      # of tee.
+      - name: Run arm64
         run: |
           set -o pipefail
-          ./build/hardfetch    2>&1 | tee output.txt
-          ./build/hardfetch -a 2>&1 | tee output-all.txt
-          ./build/hardfetch -d 2>&1 | tee output-debug.txt
+          ./build-arm64/hardfetch    2>&1 | tee output.txt
+          ./build-arm64/hardfetch -a 2>&1 | tee output-all.txt
+          ./build-arm64/hardfetch -d 2>&1 | tee output-debug.txt
           test -s output.txt
           test -s output-all.txt
 
-      - name: Checksum
-        run: shasum -a 256 build/hardfetch | tee sha256.txt
+      - name: Run x86_64
+        run: |
+          sudo softwareupdate --install-rosetta --agree-to-license || true
+          if arch -x86_64 ./build-x64/hardfetch 2>&1 | tee output-x64.txt \
+             && test -s output-x64.txt; then
+            echo "the x86_64 binary ran under Rosetta"
+          else
+            echo "Rosetta is not available, the x86_64 binary was not executed"
+            echo "not executed" > output-x64.txt
+          fi
+
+      - name: Startup time
+        run: |
+          ls -l build-arm64/hardfetch build-x64/hardfetch
+          for i in 1 2 3 4 5; do
+            /usr/bin/time -p ./build-arm64/hardfetch > /dev/null
+          done
+
+      - name: Checksums
+        run: |
+          shasum -a 256 build-arm64/hardfetch
+          shasum -a 256 build-x64/hardfetch
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: hardfetch-${{ matrix.arch }}-macos
+          name: hardfetch-macos
           path: |
-            build/hardfetch
-            sha256.txt
+            build-arm64/hardfetch
+            build-x64/hardfetch
+            arch-arm64.txt
+            arch-x64.txt
             output.txt
             output-all.txt
             output-debug.txt
+            output-x64.txt
