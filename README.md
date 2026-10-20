@@ -67,7 +67,14 @@ platform cannot supply is left out rather than guessed.
 | CPU temperature | yes | yes | yes |
 | RAM speed | yes | yes | no |
 | iGPU details | yes | yes | yes |
-| battery | no | no | yes |
+| battery | yes | yes | yes |
+
+## Todo
+
+- Linux ARM binary
+- Public IP on Linux
+- Battery temperature on Windows and Linux
+- Battery cycle count on Windows, from `powercfg /batteryreport /xml`
 
 ## Build
 

@@ -131,6 +131,26 @@ void battery_collect(hf_state* s)
     }
     if (!s->battery_charging) s->battery_charging = onMains ? 1 : 0;
 
+    /* The temperature and the cycle count are optional. Only some drivers
+       publish them, and when they are missing the fields stay unset. */
+    {
+        char path[416];
+        long v = 0;
+
+        snprintf(path, sizeof(path), "%s/temp", batteryPath);
+        if (read_int(path, &v) && v > 0 && v < 1000) {
+            /* The driver reports tenths of a degree. */
+            s->battery_temp_c = (int)(v / 10);
+            debug_log("temp %ld", v);
+        }
+
+        snprintf(path, sizeof(path), "%s/cycle_count", batteryPath);
+        if (read_int(path, &v) && v > 0) {
+            s->battery_cycles = (unsigned int)v;
+            debug_log("cycles %ld", v);
+        }
+    }
+
     debug_log("battery %u%% charging=%d", s->battery_pct, s->battery_charging);
     debug_end();
 }
