@@ -58,6 +58,7 @@ th { border-bottom-color: #ddd; }
 <li class="ok">Display liefert Name und Größe auf beiden Plattformen. Windows liest das EDID-Blob aus dem Registry, Linux aus <code>/sys/class/drm/</code>; Parser gegen das echte AOC3202-Blob geprüft, <code>32G2WG8</code> / 31,5 Zoll.</li>
 <li class="ok">Kein Feld wird geraten: fehlt eine Quelle, entfällt die Zeile. Auf WSL fehlen deshalb CPU-Temperatur, zweite GPU und Display, weil keine Thermalzone und kein DRM-Konnektor existieren.</li>
 <li class="ok">Beide Builds ohne Warnung; AddressSanitizer sauber über Standardansicht und <code>-a</code>.</li>
+<li class="ok">Live-Modus <code>-l</code> laeuft stabil und laesst sich mit <code>q</code>, <code>Esc</code> und <code>Ctrl+C</code> beenden. Die Tastatureingabe wird waehrend des Wartens auf die Konsole gepollt, in kurzen Scheiben, damit <code>q</code> innerhalb eines Bruchteils des Intervalls greift. Mit umgeleiteter Ausgabe gibt es statt der Endlosschleife ein einzelnes Bild und Exit 0.</li>
 <li class="ok">Release-Binaries tragen SHA-256, die in <code>SHA256SUMS</code>, im scoop-Manifest, in den drei winget-Manifestdateien und der brew-Formel identisch stehen.</li>
 </ul>
 
@@ -116,6 +117,7 @@ th { border-bottom-color: #ddd; }
 <li>Prozessboden dieser Maschine: leeres C-Programm 3,3 ms. Die frueher gemessenen 23 ms waren Overhead der Messmethode, nicht Windows.</li>
 <li>Linux (Debian 13, 2 vCPUs): Standardansicht 20 ms, <code>-a</code> 155 ms.</li>
 <li>Beide Builds 0 Warnungen, AddressSanitizer sauber.</li>
+<li class="ok">Live-Modus am echten Terminal geprueft: laeuft stabil, <code>q</code>, <code>Esc</code> und <code>Ctrl+C</code> beenden ihn. Der Redraw laeuft unter Windows ueber die Win32-Console-API, weil Escape-Sequenzen nicht in jeder Konsoleneinrichtung ausgewertet werden und dann Texte der vorherigen Iteration stehen bleiben. POSIX nutzt die Sequenzen, dort aber mit CRLF, weil ein nacktes LF die Spalte nicht zuruecksetzt und Zeilen zusammenfallen.</li>
 </ul>
 <h3>Packaging und der winget-Versuch</h3>
 <ul>

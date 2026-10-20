@@ -134,5 +134,6 @@ sha256sum -c SHA256SUMS
 - macOS is not in this release. The Apple branches compile against the
   old collector shape and were not retested; there is no Apple toolchain
   in the build environment.
-- Both binaries need a real terminal for `-l`; with redirected output they
-  print one frame and exit rather than looping forever.
+- `-l` needs a real terminal. With redirected output both binaries print
+  one frame and exit rather than looping forever, so a pipe never fills up
+  with an endless redraw.
