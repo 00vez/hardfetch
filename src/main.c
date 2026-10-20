@@ -35,7 +35,8 @@ typedef HANDLE hf_thread;
 #include <pthread.h>
 #include <time.h>
 #include <unistd.h>
-typedef pthread_t hf_thread;
+#include "posix/thread_posix.h"
+typedef hf_thread_posix hf_thread;
 #define HF_THREAD_RETURN void*
 #endif
 
@@ -103,18 +104,20 @@ static int thread_start(hf_thread* t, void (*fn)(void*), void* arg)
 
 /* Bounded: a collector that blocks on a wedged service must not be able to
    hang the tool. Whatever was collected so far still renders. */
-static int thread_join_bounded(hf_thread t)
+static int thread_join_bounded(hf_thread* t)
 {
-    if (WaitForSingleObject(t, WORKER_DEADLINE_MS) != WAIT_OBJECT_0) {
+    if (WaitForSingleObject(*t, WORKER_DEADLINE_MS) != WAIT_OBJECT_0) {
         debug_log("worker did not finish within %d ms, rendering partial data",
                   WORKER_DEADLINE_MS);
-        TerminateThread(t, 1);
+        TerminateThread(*t, 1);
         return 0;
     }
     return 1;
 }
 
-static void thread_close(hf_thread t) { CloseHandle(t); }
+static void thread_close(hf_thread* t) { CloseHandle(*t); }
+
+static int thread_valid(hf_thread* t) { return *t != NULL; }
 
 static unsigned long long now_ms(void)
 {
@@ -161,18 +164,15 @@ static HF_THREAD_RETURN worker_entry(void* arg)
     return NULL;
 }
 
-static int thread_start(pthread_t* t, void (*fn)(void*), void* arg)
+static int thread_start(hf_thread* t, void (*fn)(void*), void* arg)
 {
     (void)fn;
-    return pthread_create(t, NULL, worker_entry, arg) == 0;
+    return hf_thread_posix_start(t, worker_entry, arg);
 }
 
-static int thread_join_bounded(pthread_t t)
+static int thread_join_bounded(hf_thread* t)
 {
-    struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec += WORKER_DEADLINE_MS / 1000;
-    if (pthread_timedjoin_np(t, NULL, &deadline) != 0) {
+    if (!hf_thread_posix_wait(t, WORKER_DEADLINE_MS)) {
         debug_log("worker did not finish within %d ms, rendering partial data",
                   WORKER_DEADLINE_MS);
         return 0;
@@ -180,7 +180,9 @@ static int thread_join_bounded(pthread_t t)
     return 1;
 }
 
-static void thread_close(pthread_t t) { (void)t; }
+static void thread_close(hf_thread* t) { hf_thread_posix_close(t); }
+
+static int thread_valid(hf_thread* t) { return t->started; }
 
 static unsigned long long now_ms(void)
 {
@@ -356,9 +358,9 @@ int main(int argc, char** argv)
     if (o.show_all)
         public_ip_start(&s, PUBLIC_IP_TIMEOUT_MS);
 
-    if (worker) {
-        thread_join_bounded(worker);
-        thread_close(worker);
+    if (thread_valid(&worker)) {
+        thread_join_bounded(&worker);
+        thread_close(&worker);
     }
 
     cpu_sample_end(&s);

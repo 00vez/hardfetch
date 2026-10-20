@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <netdb.h>
 #include <poll.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +13,8 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "thread_posix.h"
 
 static const char* const kHosts[] = {
     "api.ipify.org", "ifconfig.me", "icanhazip.com"
@@ -165,7 +166,7 @@ static void* lookup_proc(void* arg)
 }
 
 static lookup    g_lookup;
-static pthread_t g_thread;
+static hf_thread_posix g_thread;
 static int       g_started;
 
 void public_ip_start(hf_state* s, unsigned int timeoutMs)
@@ -178,7 +179,7 @@ void public_ip_start(hf_state* s, unsigned int timeoutMs)
     g_started = 1;
 
     memset(&g_lookup, 0, sizeof(g_lookup));
-    if (pthread_create(&g_thread, NULL, lookup_proc, &g_lookup) != 0) {
+    if (!hf_thread_posix_start(&g_thread, lookup_proc, &g_lookup)) {
         g_started = 0;
         debug_log("could not start the lookup thread");
     } else {
@@ -191,19 +192,13 @@ void public_ip_start(hf_state* s, unsigned int timeoutMs)
 
 int public_ip_join(hf_state* s, unsigned int waitMs)
 {
-    struct timespec deadline;
-    int rc;
+    int finished;
 
     debug_begin("publicip");
     if (!g_started) { debug_end(); return 0; }
 
-    clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec += waitMs / 1000;
-    deadline.tv_nsec += (long)(waitMs % 1000) * 1000000L;
-    if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
-
-    rc = pthread_timedjoin_np(g_thread, NULL, &deadline);
-    if (rc != 0 || !g_lookup.done || !g_lookup.buf[0]) {
+    finished = hf_thread_posix_wait(&g_thread, waitMs);
+    if (!finished || !g_lookup.done || !g_lookup.buf[0]) {
         debug_log("no public IP within %u ms", waitMs);
         s->ip_public[0] = 0;
         debug_end();

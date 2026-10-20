@@ -84,6 +84,7 @@ else()
         src/posix/host_posix.c
         src/posix/kernel_posix.c
         src/posix/uptime_posix.c
+        src/posix/thread_posix.c
         src/posix/shell_posix.c
         src/posix/gpu_posix.c
         src/posix/cpu_posix.c
