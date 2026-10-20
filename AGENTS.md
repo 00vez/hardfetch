@@ -118,5 +118,18 @@ in `src/posix/`. `src/gpu_nvidia.c` is dead and in no target.
 
 ## Docs
 
-`plan.md` is the design document, `progress.html` the session log,
-`release-notes-3.5.md` the published notes. `README.md` for users.
+`docs/progress.html` is the session log, read it with
+`cath docs/progress.html`. It holds the project goal, the architecture
+decisions, the data sources per platform, the gotchas and the history of
+every session. The published notes live in the release bodies on GitHub.
+`README.md` is for users.
+
+The prebuilt binaries are not in the repository. They live in the releases
+with `SHA256SUMS` next to them.
+
+## Install
+
+The user downloads the binary from the release. There is no installer
+script: `~/.local/bin` is not in the default PATH on macOS, so a script
+that installs there leaves the user with a tool that does not start.
+The README shows one download line per shell, nothing else.

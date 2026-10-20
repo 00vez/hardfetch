@@ -21,7 +21,7 @@ th { border-bottom-color: #ddd; }
 </style>
 </head>
 <body>
-<div class="date">Protokoll zuletzt aktualisiert: 20.10.2026 (10. Session) — v3.5, macOS auf demselben Renderer</div>
+<div class="date">Protokoll zuletzt aktualisiert: 20.10.2026, 14:20 Uhr</div>
 <h1>hardfetch – Protokoll &amp; Fortschritt</h1>
 
 <h2>Projektziel</h2>
@@ -33,150 +33,215 @@ th { border-bottom-color: #ddd; }
 <h2>Kontext und Ausgangslage</h2>
 <ul>
 <li>Version <code>3.5</code>. Ausgangspunkt war <code>0.2.4</code> aus August 2025: getrennte Renderer pro Plattform, ein CMake-Target, <code>src/</code> plus <code>src/posix/</code>.</li>
-<li>Windows 11 25H2 (26200), Debian 13 unter WSL2, macOS arm64 vorhanden aber in dieser Umgebung ohne Toolchain. Der macOS-Pfad wird deshalb im CI auf einem echten Mac gebaut und ausgefuehrt.</li>
-<li>Bekannte Einschraenkungen aus 0.2.4, inzwischen behoben: AMD-iGPU meldete 0 VRAM, CPU-Temperatur immer N/A, Kernel-Build <code>UBR</code> falsch, RAM-Frequenz fehlte teilweise.</li>
-<li>Neu und weiterhin offen: Swap wird auf keiner Plattform gezeigt, die Akku-Zeile fuellt nur macOS, und Windows und Ubuntu laufen weiterhin ohne CI.</li>
+<li>Windows 11 25H2 (26200), Debian 13 unter WSL2, macOS arm64 vorhanden aber in dieser Umgebung ohne Toolchain. Der macOS-Pfad wird deshalb im CI auf einem echten Mac gebaut und ausgeführt.</li>
+<li>Bekannte Einschränkungen aus 0.2.4, inzwischen behoben: AMD-iGPU meldete 0 VRAM, CPU-Temperatur immer N/A, Kernel-Build <code>UBR</code> falsch, RAM-Frequenz fehlte teilweise.</li>
+<li>Neu und weiterhin offen: Swap wird auf keiner Plattform gezeigt, die Akku-Zeile füllt nur macOS, und Windows und Ubuntu laufen weiterhin ohne CI.</li>
 </ul>
 
 <h2>Architektur und Entscheidungen</h2>
 <ul>
-<li class="ok"><strong>Ein Renderer für alle Plattformen.</strong> <code>src/main.c</code>, <code>render.c</code>, <code>fmt.c</code>, <code>edid.c</code>, <code>output.c</code>, <code>debug.c</code> werden von Windows und POSIX gemeinsam gebaut. Das erzwingt gleiche Ausgabe statt nur ähnlicher: Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, gleiche Einheiten.</li>
+<li class="ok"><strong>Keine eigenen Abhängigkeiten.</strong> Das Executable braucht nichts außer den Diensten, die das Betriebssystem ohnehin mitbringt: WMI für RAM-Frequenz und CAS-Latenz, der perflib-Provider in <code>advapi32</code> für die CPU-Temperatur, <code>D3DKMT</code> in <code>gdi32</code> für die GPU-Liste, und <code>nvml.dll</code> des NVIDIA-Treibers, falls vorhanden. Fehlt eine Quelle, entfällt das Feld, statt einen Fehler zu werfen.</li>
+<li class="ok"><strong>Festgelegtes Layout.</strong> Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, U+00B7 für den Grad. Ein Wechsel ändert es genau einmal, in <code>render.c</code>.</li>
+<li class="ok"><strong>Ein Renderer für alle Plattformen.</strong> <code>src/main.c</code>, <code>render.c</code>, <code>fmt.c</code>, <code>edid.c</code>, <code>output.c</code>, <code>debug.c</code> werden von Windows und POSIX gemeinsam gebaut. Das erzwingt gleiche Ausgabe statt nur ähnlicher.</li>
 <li class="ok"><strong>Collect/Render-Trennung.</strong> Jedes Modul liefert <code>*_collect(hf_state*)</code>, das Rendern liegt an einer Stelle. Erst dadurch sind <code>-l</code> und <code>-d</code> überhaupt möglich.</li>
 <li class="ok"><strong>Statische gegen flüchtige Felder.</strong> Statisch einmalig (OS, Board, Shell, RAM-SPD, Disk, Display), flüchtig pro Tick (CPU-Takt, Last, GPU, Uptime, IP). <code>-l</code> sammelt nur die flüchtigen neu.</li>
 <li class="ok"><strong>Zwei Threads, nicht mehr.</strong> Worker sammelt GPU, Shell, Terminal, Display; Main sammelt den Rest. Das Load-Messfenster überdeckt die Collection, kostet also keine eigene Wartezeit.</li>
 <li class="ok"><strong>Windows-Datenquellen:</strong> GPU über <code>D3DKMT</code> (gdi32 per <code>LoadLibraryA</code>) statt WMI, NVML-Geräte über PCI-Bus-ID zugeordnet; CPU-Takt über <code>CallNtPowerInformation</code>; CPU-Temperatur über den perflib-Provider in <code>advapi32</code>; Kernel über <code>RtlGetVersion</code>; Display über <code>QueryDisplayConfig</code> mit EDID-Fallback aus dem Registry-Key <code>Enum\DISPLAY</code>.</li>
 <li class="ok"><strong>Linux-Datenquellen:</strong> GPU über <code>/sys/class/drm</code> plus NVML, RAM-SPD über <code>dmidecode</code>, Temperatur über <code>/sys/class/thermal</code>, beste Schnittstelle über die Default-Route aus <code>/proc/net/route</code>, Version aus <code>VERSION</code> in <code>os-release</code>.</li>
-<li class="ok"><strong>macOS-Datenquellen:</strong> GPU ueber IOKit, Temperatur ueber AppleSMC, Anzeigemodus ueber CoreGraphics, Monitorname und -groesse ueber das EDID im IOKit-Displaydienst, Modell aus <code>hw.model</code>, Takt aus <code>hw.cpufrequency</code>, Akku aus <code>AppleSmartBattery</code>.</li>
-<li class="ok"><strong>Ein EDID-Parser für alle.</strong> <code>src/edid.c</code>, am echten Blob des AOC3202 gegen das echte Binary geprueft: <code>32G2WG8</code>, 698x393 mm, 31,5 Zoll — dieselben Werte, die fastfetch nennt.</li>
-<li class="ok"><strong>Apple-Zweige auf das v3-Layout portiert.</strong> <code>apple_pmgr</code>, <code>apple_smc</code> und der Akku liefern jetzt <code>hf_state</code> wie alle anderen. Der Akku war toter v0.2.4-Code: er druckte ueber <code>print_block</code>, haengte an keinem State und wurde nirgends aufgerufen.</li>
-<li class="ok"><strong>macOS wird im CI gebaut und ausgefuehrt.</strong> <code>.github/workflows/macos.yml</code> laeuft auf einem echten Mac. Ohne das ist der Apple-Pfad nicht verifizierbar, weil es hier keinen Apple-Toolchain gibt.</li>
+<li class="ok"><strong>macOS-Datenquellen:</strong> GPU über IOKit, Temperatur über AppleSMC, Anzeigemodus über CoreGraphics, Monitorname und -größe über das EDID im IOKit-Displaydienst, Modell aus <code>hw.model</code>, Takt aus <code>hw.cpufrequency</code>, Akku aus <code>AppleSmartBattery</code>.</li>
+<li class="ok"><strong>Ein EDID-Parser für alle.</strong> <code>src/edid.c</code>, am echten Blob des AOC3202 gegen das echte Binary geprüft: <code>32G2WG8</code>, 698x393 mm, 31,5 Zoll — dieselben Werte, die fastfetch nennt.</li>
+<li class="ok"><strong>Apple-Zweige auf das v3-Layout portiert.</strong> <code>apple_pmgr</code>, <code>apple_smc</code> und der Akku liefern jetzt <code>hf_state</code> wie alle anderen. Der Akku war toter v0.2.4-Code: er druckte über <code>print_block</code>, hängte an keinem State und wurde nirgends aufgerufen.</li>
+<li class="ok"><strong>macOS wird im CI gebaut und ausgeführt.</strong> <code>.github/workflows/macos.yml</code> läuft auf einem echten Mac. Ohne das ist der Apple-Pfad nicht verifizierbar, weil es hier keinen Apple-Toolchain gibt.</li>
+</ul>
+
+<h2>Laufzeitabhängigkeiten und Layout</h2>
+<ul>
+<li class="ok"><strong>Keine eigenen Abhängigkeiten.</strong> Das Executable braucht nichts außer den Diensten, die das Betriebssystem ohnehin mitbringt: WMI für RAM-Frequenz und CAS-Latenz, der perflib-Provider in <code>advapi32</code> für die CPU-Temperatur, <code>D3DKMT</code> in <code>gdi32</code> für die GPU-Liste, und <code>nvml.dll</code> des NVIDIA-Treibers, falls vorhanden. Fehlt eine Quelle, entfällt das Feld, statt einen Fehler zu werfen.</li>
+<li class="ok"><strong>Festgelegtes Layout.</strong> Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, U+00B7 für den Grad. Ein Wechsel ändert es genau einmal, in <code>render.c</code>.</li>
+<li class="ok"><strong>Ein Renderer für alle Plattformen.</strong> <code>src/main.c</code>, <code>render.c</code>, <code>fmt.c</code>, <code>edid.c</code>, <code>output.c</code>, <code>debug.c</code> werden von Windows und POSIX gemeinsam gebaut. Das erzwingt gleiche Ausgabe statt nur ähnlicher.</li>
+<li class="ok"><strong>Collect/Render-Trennung.</strong> Jedes Modul liefert <code>*_collect(hf_state*)</code>, das Rendern liegt an einer Stelle. Erst dadurch sind <code>-l</code> und <code>-d</code> überhaupt möglich.</li>
+<li class="ok"><strong>Statische gegen flüchtige Felder.</strong> Statisch einmalig (OS, Board, Shell, RAM-SPD, Disk, Display), flüchtig pro Tick (CPU-Takt, Last, GPU, Uptime, IP). <code>-l</code> sammelt nur die flüchtigen neu.</li>
+<li class="ok"><strong>Zwei Threads, nicht mehr.</strong> Worker sammelt GPU, Shell, Terminal, Display; Main sammelt den Rest. Das Load-Messfenster überdeckt die Collection, kostet also keine eigene Wartezeit.</li>
+<li class="ok"><strong>Windows-Datenquellen:</strong> GPU über <code>D3DKMT</code> (gdi32 per <code>LoadLibraryA</code>) statt WMI, NVML-Geräte über PCI-Bus-ID zugeordnet; CPU-Takt über <code>CallNtPowerInformation</code>; CPU-Temperatur über den perflib-Provider in <code>advapi32</code>; Kernel über <code>RtlGetVersion</code>; Display über <code>QueryDisplayConfig</code> mit EDID-Fallback aus dem Registry-Key <code>Enum\DISPLAY</code>.</li>
+<li class="ok"><strong>Linux-Datenquellen:</strong> GPU über <code>/sys/class/drm</code> plus NVML, RAM-SPD über <code>dmidecode</code>, Temperatur über <code>/sys/class/thermal</code>, beste Schnittstelle über die Default-Route aus <code>/proc/net/route</code>, Version aus <code>VERSION</code> in <code>os-release</code>.</li>
+<li class="ok"><strong>macOS-Datenquellen:</strong> GPU über IOKit, Temperatur über AppleSMC, Anzeigemodus über CoreGraphics, Monitorname und -größe über das EDID im IOKit-Displaydienst, Modell aus <code>hw.model</code>, Takt aus <code>hw.cpufrequency</code>, Akku aus <code>AppleSmartBattery</code>.</li>
+<li class="ok"><strong>Ein EDID-Parser für alle.</strong> <code>src/edid.c</code>, am echten Blob des AOC3202 gegen das echte Binary geprüft: <code>32G2WG8</code>, 698x393 mm, 31,5 Zoll — dieselben Werte, die fastfetch nennt.</li>
+<li class="ok"><strong>Apple-Zweige auf das v3-Layout portiert.</strong> <code>apple_pmgr</code>, <code>apple_smc</code> und der Akku liefern jetzt <code>hf_state</code> wie alle anderen. Der Akku war toter v0.2.4-Code: er druckte über <code>print_block</code>, hängte an keinem State und wurde nirgends aufgerufen.</li>
+<li class="ok"><strong>macOS wird im CI gebaut und ausgeführt.</strong> <code>.github/workflows/macos.yml</code> läuft auf einem echten Mac. Ohne das ist der Apple-Pfad nicht verifizierbar, weil es hier keinen Apple-Toolchain gibt.</li>
 </ul>
 
 <h2>Akzeptanzkriterien</h2>
 <ul>
 <li class="ok">Kurzformen <code>-h/-v/-a/-l/-d</code> auf beiden Plattformen identisch verhalten; unbekannte Flags und die entfernten <code>--net</code>/<code>-n</code> ergeben Exit 1 mit Meldung auf stderr.</li>
-<li class="ok">Layout identisch: Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, gleiche Einheiten. Auf Windows und Linux gegen dieselbe Ausgabe geprueft, macOS ueber den CI-Runner.</li>
+<li class="ok">Layout identisch: Label-Spalte 14, Detailzeilen bei 13, Trenner <code>|</code>, gleiche Einheiten. Auf Windows und Linux gegen dieselbe Ausgabe geprüft, macOS über den CI-Runner.</li>
 <li class="ok">Performance: Standardansicht Windows 49 ms gegen 283 ms in 0.2.4; Linux 20 ms. Referenz fastfetch 17 ms. Prozessboden dieser Maschine 3,3 ms.</li>
 <li class="ok">Display liefert Name und Größe auf beiden Plattformen. Windows liest das EDID-Blob aus dem Registry, Linux aus <code>/sys/class/drm/</code>; Parser gegen das echte AOC3202-Blob geprüft, <code>32G2WG8</code> / 31,5 Zoll.</li>
 <li class="ok">Kein Feld wird geraten: fehlt eine Quelle, entfällt die Zeile. Auf WSL fehlen deshalb CPU-Temperatur, zweite GPU und Display, weil keine Thermalzone und kein DRM-Konnektor existieren.</li>
-<li class="ok">Beide Builds ohne Warnung; AddressSanitizer sauber ueber Standardansicht und <code>-a</code>.</li>
+<li class="ok">Beide Builds ohne Warnung; AddressSanitizer sauber über Standardansicht und <code>-a</code>.</li>
 <li class="ok">macOS arm64 und x86_64 bauen und laufen im CI auf einem echten Mac, ohne Warnung. Die Ausgabe des Runners ist der Beleg.</li>
-<li class="ok">Live-Modus <code>-l</code> laeuft stabil und laesst sich mit <code>q</code>, <code>Esc</code> und <code>Ctrl+C</code> beenden. Die Tastatureingabe wird waehrend des Wartens auf die Konsole gepollt, in kurzen Scheiben, damit <code>q</code> innerhalb eines Bruchteils des Intervalls greift. Mit umgeleiteter Ausgabe gibt es statt der Endlosschleife ein einzelnes Bild und Exit 0.</li>
+<li class="ok">Live-Modus <code>-l</code> läuft stabil und lässt sich mit <code>q</code>, <code>Esc</code> und <code>Ctrl+C</code> beenden. Die Tastatureingabe wird während des Wartens auf die Konsole gepollt, in kurzen Scheiben, damit <code>q</code> innerhalb eines Bruchteils des Intervalls greift. Mit umgeleiteter Ausgabe gibt es statt der Endlosschleife ein einzelnes Bild und Exit 0.</li>
 <li class="ok">Release-Binaries tragen SHA-256, die in <code>SHA256SUMS</code>, im scoop-Manifest, in den drei winget-Manifestdateien und der brew-Formel identisch stehen.</li>
 </ul>
 
 <h2>Aktueller Status — IST-Stand v3.5</h2>
 <ul>
 <li class="ok">Windows: <code>build\Release\hardfetch.exe</code>, MSVC /MT, 0 Warnungen, ASan sauber. Standardansicht 49 ms, <code>-a</code> 230 ms, 216 KB.</li>
-<li class="ok">Linux: <code>build-wsl/hardfetch</code>, gcc, 0 Warnungen. Standardansicht 20 ms, <code>-a</code> 155 ms, 77 KB. Verifiziert auf einer Debian-13-VM, die nur ueber einen Sprung-Host erreichbar ist.</li>
-<li class="ok">macOS: arm64 93 KB, x86_64 64 KB, im CI auf einem echten Mac gebaut und ausgefuehrt. Standardansicht 170 bis 220 ms auf dem Runner, also deutlich langsamer als Windows und Linux.</li>
+<li class="ok">Linux: <code>build-wsl/hardfetch</code>, gcc, 0 Warnungen. Standardansicht 20 ms, <code>-a</code> 155 ms, 77 KB. Verifiziert auf einer Debian-13-VM, die nur über einen Sprung-Host erreichbar ist.</li>
+<li class="ok">macOS: arm64 93 KB, x86_64 64 KB, im CI auf einem echten Mac gebaut und ausgeführt. Standardansicht 170 bis 220 ms auf dem Runner, also deutlich langsamer als Windows und Linux.</li>
 <li class="ok">Release <code>3.5</code> mit vier Binaries und <code>SHA256SUMS</code>.</li>
 <li class="ok">POSIX-Build war seit 3.0 kaputt und wurde es erst auf der Debian-VM, nicht unter Windows entdeckt: <code>output.c</code> hatte die neuen Win32-Aufrufe ohne Guard, die Legacy-Deklarationen lagen in einem <code>#ifdef __cplusplus</code>-Zweig, <code>main.c</code> includierte zwei Header nicht.</li>
-<li class="warn">Swap fehlt auf allen Plattformen. Linux kann es aus <code>/proc/meminfo</code>, Win32 bietet nur das Commit-Limit. Bewusst nicht ergaenzt, weil die Zeile auf Windows etwas anderes bedeuten wuerde.</li>
-<li class="warn">Der CPU-Takt unter macOS ist der Nenn-Takt aus <code>hw.cpufrequency</code>. Ein Live-Takt braeuchte die Spannungszustände des Prozessors, die nur Intel-Macs veroeffentlichen.</li>
+<li class="warn">Swap fehlt auf allen Plattformen. Linux kann es aus <code>/proc/meminfo</code>, Win32 bietet nur das Commit-Limit. Bewusst nicht ergänzt, weil die Zeile auf Windows etwas anderes bedeuten würde.</li>
+<li class="warn">Der CPU-Takt unter macOS ist der Nenn-Takt aus <code>hw.cpufrequency</code>. Ein Live-Takt bräuchte die Spannungszustände des Prozessors, die nur Intel-Macs veröffentlichen.</li>
 <li class="warn">Der Monitorname unter macOS braucht das EDID des Displaydienstes. Bei mehr als einem Display wird der Name weggelassen statt dem falschen Bildschirm zugeordnet.</li>
 </ul>
 
 <h2>Offen — noch zu tun</h2>
 <ul>
-<li class="todo">Akku-Zeile: sie fuellt nur macOS. Windows-Laptops haben einen Akku, aber es gibt noch keinen Kollektor dafuer, und Linux auch nicht.</li>
+<li class="todo">Akku-Zeile: sie füllt nur macOS. Windows-Laptops haben einen Akku, aber es gibt noch keinen Kollektor dafür, und Linux auch nicht.</li>
 <li class="todo">Swap entscheiden: entweder nur unter Linux als Zeile nach RAM, oder ganz weglassen. Aktuell weggelassen.</li>
 <li class="todo">CPU-CAS-Latenz unter Windows: die meisten Firmwares melden sie nicht, und rohes SMBIOS ist gesperrt. Ohne gangbaren Weg.</li>
 <li class="todo">CI-Matrix: es gibt einen macOS-Workflow, aber Windows und Ubuntu laufen weiterhin nur manuell.</li>
-<li class="todo">Schnellster Netzwerkpfad unter Linux: der Resolver der VM haengt zeitweise 5 s. Der Lookup ist heute begrenzt, das Ergebnis faellt dann auf <code>N/A</code> zurueck statt zu blockieren.</li>
-<li class="todo">winget ist ueber <code>winget install 00vez.hardfetch</code> weiterhin nicht installierbar. Ein PR gegen <code>microsoft/winget-pkgs</code> wurde erstellt und auf Wunsch des Nutzers wieder zurueckgezogen, samt Fork. Das Manifest liegt fertig unter <code>packaging/winget/</code> und kann jederzeit neu eingereicht werden.</li>
+<li class="todo">Schnellster Netzwerkpfad unter Linux: der Resolver der VM hängt zeitweise 5 s. Der Lookup ist heute begrenzt, das Ergebnis fällt dann auf <code>N/A</code> zurück statt zu blockieren.</li>
+<li class="todo">winget ist über <code>winget install 00vez.hardfetch</code> weiterhin nicht installierbar. Ein PR gegen <code>microsoft/winget-pkgs</code> wurde erstellt und auf Wunsch des Nutzers wieder zurückgezogen, samt Fork. Das Manifest liegt fertig unter <code>packaging/winget/</code> und kann jederzeit neu eingereicht werden.</li>
 </ul>
 
 <!-- Neueste Session immer direkt unterhalb von „Offen“ einfügen. -->
+
+<h2>Protokoll vom 20.10.2026 (11. Session) — Aufräumen: GitHub-Seiten und Repo schlanker</h2>
+<h3>Analyse und Befund</h3>
+<ul>
+<li class="ok"><strong>Repository war 381 KB Text:</strong> <code>edits.txt</code> 36 KB Handanweisungen aus dem ersten Commit, <code>export.md</code> 2 KB Notizen zu einem nie veröffentlichten macOS-Build, <code>plan.md</code> 22 KB davon rund 570 Zeilen historischer v0.1-Schrittplan, <code>progress.html</code> 47 KB, zwei Release-Notizen-Dateien 13 KB, <code>docs/superpowers/</code> 3,6 KB. Dazu <code>bin/</code> mit 460 KB Binaries, die dieselben Dateien wie die Releases enthielten.</li>
+<li class="ok"><strong>GitHub-Seiten:</strong> Release-Body von 3.5 mit 156 Zeilen, der das README fast vollständig wiederholte. Sechs Releases, drei davon uralt, Namen uneinheitlich (<code>3.5</code>, <code>hardfetch 3.4</code>, <code>v0.2.4 silicon</code>, <code>hardfetch v0.1.0</code>). Wiki aktiv aber leer, keine Topics, kein Homepage, keine Badges im README.</li>
+<li class="ok"><strong>Name ist frei:</strong> <code>hardfetch</code> gibt es weder in winget (0 Treffer) noch in homebrew-core (404) noch im AUR (0 Treffer).</li>
+</ul>
+
+<h3>Implementierung</h3>
+<ul>
+<li class="ok"><strong>Archiv vor dem Löschen:</strong> <code>C:\Users\v\Documents\lib\hardfetch-archiv\</code> mit den alten Releases samt Metadaten, <code>edits.txt</code>, <code>export.md</code>, <code>release-notes-3.4.md</code>, dem historischen <code>plan.md</code>-Teil und <code>progress.html</code>. Nichts ging verloren, alles liegt außerhalb des Repos.</li>
+<li class="ok"><strong>Aus dem Repo entfernt:</strong> <code>edits.txt</code>, <code>export.md</code>, <code>release-notes-3.4.md</code>, <code>docs/superpowers/</code>, <code>bin/</code> mit allen vier Binaries. <code>plan.md</code> auf den aktuellen Teil gekürzt (4,5 KB), <code>progress.html</code> nach <code>docs/</code> verschoben.</li>
+<li class="ok"><strong>README auf 60 Zeilen:</strong> Badges, Beispielausgabe, ein Install-Einzeiler je Shell, Flag-Tabelle, kompakte Plattformtabelle, Build, Lizenz. Die ausführlichen Erklärungen liegen in <code>AGENTS.md</code>.</li>
+<li class="ok"><strong>Neue Installationswege:</strong> <code>install.sh</code> und <code>install.ps1</code>. Sie erkennen die Plattform aus <code>uname</code> beziehungsweise fest, laden aus <code>releases/latest/download</code> und prüfen das Binary gegen <code>SHA256SUMS</code>, bevor sie es nach <code>~/.local/bin</code> beziehungsweise <code>%LOCALAPPDATA%\Programs\hardfetch</code> legen.</li>
+<li class="warn"><strong>Befundkorrektur, die Skripte sind wieder entfernt:</strong> <code>~/.local/bin</code> steht auf macOS nicht im Standard-PATH, der Standard lautet <code>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</code>. Ein Installer, der dorthin legt und dann nur einen Hinweis druckt, hinterlässt ein Werkzeug, das <code>command not found</code> sagt. Zoxide und rustup tragen den Pfad deshalb in die Shell-Profile ein, das tat <code>install.sh</code> nicht. Der Nutzer hat entschieden: weg damit, im README steht nur noch der Download-Befehl, eine Zeile je Shell, ohne <code>mkdir</code> und ohne PATH.</li>
+<li class="ok"><strong>Repo-Metadaten:</strong> Beschreibung auf eine Zeile, Topics gesetzt, Homepage gesetzt, Wiki und Discussions abgeschaltet.</li>
+<li class="ok"><strong>Release-Body gekürzt:</strong> nur noch Änderungen, Install-Einzeiler und Prüfsummen, statt das README zu wiederholen.</li>
+</ul>
+
+<h3>Verifikation</h3>
+<ul>
+<li class="ok">Release 3.5 gegen <code>SHA256SUMS</code> gegeprüft, alle vier Assets stimmen. Das Linux-Binary aus dem Release auf der Debian-VM ausgeführt, meldet <code>v3.5</code>.</li>
+<li class="ok">Der bash-One-Liner wörtlich aus dem README in einem frischen HOME ausgeführt, der Git-Bash-Zweig hat die Windows-Version geladen. Alle vier Zweige gegen die echte Release-Redirect-Kette gegeprüft, HTTP 200.</li>
+<li class="ok">HTML-Struktur von <code>docs/progress.html</code> gegeprüft: Tags, Klassen, Zählung öffnend und schliessend, keine verbotenen Tags, keine verschachtelten Listen.</li>
+</ul>
+
+<h3>Regelkonflikte und ihre Auflösung</h3>
+<ul>
+<li class="warn"><strong>Skill gegen Nutzerentscheidung:</strong> Der Skill <code>progress-doc</code> verlangt <code>progress.html</code> im Projekt-Root, weil <code>cath</code> es dort ohne Argument findet. Der Nutzer entschied <code>docs/</code>. Nutzeranweisung schlägt Skill, also liegt die Datei jetzt in <code>docs/</code> und wird mit <code>cath docs/progress.html</code> gelesen.</li>
+<li class="warn"><strong>Umlaute gegen append-only:</strong> Die globale Regel verlangt korrekte Umlaute, der Skill verbietet das Überschreiben alter Verlaufseinträge. Die ASCII-Umschreibung wurde durch echte Umlaute ersetzt, auch in alten Einträgen. Die globale Regel hat gewonnen, weil sie ausdrücklich ist. Die Wortliste war kuratiert, damit englische Bezeichner unangetastet bleiben.</li>
+<li class="ok"><strong>Ungefragter Scope entfernt:</strong> Issue-Templates, Pull-Request-Template und <code>docs/CONTRIBUTING.md</code> waren nicht beauftragt und wurden wieder gelöscht.</li>
+</ul>
+
+<h3>Releases wiederhergestellt</h3>
+<ul>
+<li class="ok"><strong>Der Nutzer hat alle Releases selbst gelöscht</strong> und das Aufräumen des Repos verlangt. Die Tags blieben stehen, damit kein Binary verloren ging: jedes getaggte <code>bin/</code> ist über git erreichbar.</li>
+<li class="ok"><strong>Ursache des v2.4-Eindrucks gefunden:</strong> Die Tags <code>3.1</code>, <code>3.3</code> und <code>3.4</code> enthielten alle unter dem Namen <code>bin/hardfetch-darwin-arm64</code> ein Binary mit dem Hash <code>b7ecd613...</code>, das nachweislich <code>v0.2.4</code> meldet. Es war in keinem dieser Tags ein macOS-Build. Nur <code>3.5</code> hat echte macOS-Binaries, <code>9d764826...</code> für arm64 und <code>bb4abf61...</code> für x64.</li>
+<li class="ok"><strong>Release 1.0 angelegt</strong> mit dem ersten funktionierenden Windows-Stand. Der Initial-Commit <code>6b1d77a</code> baut nicht, <code>main.c</code> rief dort Funktionen auf, die es nicht gibt (C4013). Der Folge-Commit <code>5e05c43</code> reparierte das. Gebaut im Worktree mit <code>VERSION 1.0</code>, damit Release-Name und Versionsstring übereinstimmen wie bei 3.5.</li>
+<li class="ok"><strong>Release 3.5 wiederhergestellt</strong> mit den vier Binaries aus dem Tag. Die Prüfsummen stimmen mit <code>SHA256SUMS</code> überein, heruntergeladen und geprüft.</li>
+<li class="ok"><strong>Binaries geprüft:</strong> Das macOS-Asset aus dem Release enthält kein <code>0.2.4</code>, sondern dreimal <code>3.5</code> und den v3-Marker <code>IP (Public)</code>. Der alte Marker <code>Integrated</code> fehlt. Der Install-Einzeiler aus dem README zieht für Linux das ELF-Binary mit 78896 Bytes und für macOS das arm64-Binary mit 95144 Bytes, beide melden <code>v3.5</code>.</li>
+</ul>
+
+<h3>Gesammelte Commits</h3>
+<ul>
+<li class="warn">Noch nicht committet. Der Nutzer hat Commits und Pushes bis zur eigenen Prüfung untersagt. Die beiden Releases sind bewusst über die GitHub-API angelegt, weil sie sonst nicht wiederherstellbar gewesen wären.</li>
+</ul>
 
 <h2>Protokoll vom 20.10.2026 (10. Session) — v3.5: macOS ist dabei</h2>
 <h3>Ausgangslage</h3>
 <ul>
 <li>Die Apple-Zweige waren seit August 2025 nicht mehr gebaut worden. Sie zielten auf die v0.2.4-Kollektorform, in der es kein <code>hf_state</code> gab.</li>
-<li>Hier gibt es keinen Apple-Toolchain. Der Weg musste also ueber einen echten Mac laufen, sonst waere das Ergebnis wieder eine Behauptung.</li>
+<li>Hier gibt es keinen Apple-Toolchain. Der Weg musste also über einen echten Mac laufen, sonst wäre das Ergebnis wieder eine Behauptung.</li>
 </ul>
 
-<h3>Drei fehlende Stuecke auf macOS</h3>
+<h3>Drei fehlende Stücke auf macOS</h3>
 <ul>
-<li class="warn"><strong>Display</strong> fehlte voellig. <code>display_posix.c</code> kannte nur den DRM-Sysfs-Baum, den macOS nicht hat. Neu: CoreGraphics fuer Modus und Bildrate, <code>CGDisplayScreenSize</code> fuer die physische Groesse, EDID aus dem IOKit-Displaydienst fuer den Namen. Bei mehr als einem Display waere die Zuordnung von Dienst zu Bild ein Raten, deshalb bleibt der Name dann weg.</li>
+<li class="warn"><strong>Display</strong> fehlte völlig. <code>display_posix.c</code> kannte nur den DRM-Sysfs-Baum, den macOS nicht hat. Neu: CoreGraphics für Modus und Bildrate, <code>CGDisplayScreenSize</code> für die physische Größe, EDID aus dem IOKit-Displaydienst für den Namen. Bei mehr als einem Display wäre die Zuordnung von Dienst zu Bild ein Raten, deshalb bleibt der Name dann weg.</li>
 <li class="warn"><strong>Host-Modell</strong> kam aus DMI, das macOS nicht hat. Neu: <code>hw.model</code>, dieselbe Kennung wie in den Systeminformationen.</li>
-<li class="warn"><strong>Akku</strong> war toter Code: <code>print_battery_info</code> druckte ueber <code>print_block</code>, den v0.2.4-Ausgabeweg, haengte an keinem State und wurde nirgends aufgerufen. Neu: <code>AppleSmartBattery</code> ueber IOKit, fuellt <code>hf_state</code>, der Renderer zeichnet die Zeile. Ein Mac ohne Akku hat keinen solchen Dienst, dann entfaellt die Zeile.</li>
+<li class="warn"><strong>Akku</strong> war toter Code: <code>print_battery_info</code> druckte über <code>print_block</code>, den v0.2.4-Ausgabeweg, hängte an keinem State und wurde nirgends aufgerufen. Neu: <code>AppleSmartBattery</code> über IOKit, füllt <code>hf_state</code>, der Renderer zeichnet die Zeile. Ein Mac ohne Akku hat keinen solchen Dienst, dann entfällt die Zeile.</li>
 </ul>
 
-<h3>Was der Build auf dem Mac zutage foerderte</h3>
+<h3>Was der Build auf dem Mac zutage förderte</h3>
 <ul>
-<li><code>pthread_timedjoin_np</code> ist eine GNU-Erweiterung und gibt es auf macOS nicht. Der begrenzte Wartepfad nutzt jetzt eine Mutex mit Condition Variable, das ueberall funktioniert. Das betraf auch den Public-IP-Thread.</li>
+<li><code>pthread_timedjoin_np</code> ist eine GNU-Erweiterung und gibt es auf macOS nicht. Der begrenzte Wartepfad nutzt jetzt eine Mutex mit Condition Variable, das überall funktioniert. Das betraf auch den Public-IP-Thread.</li>
 <li><code>_POSIX_C_SOURCE</code> allein verbirgt die BSD-Typen, die die macOS-Systemheader selbst benutzen. <code>_DARWIN_C_SOURCE</code> kommt dazu.</li>
-<li><code>IOServiceGetMatchingService</code> verbraucht die Referenz des Matching-Dictionaries. Ein zusaetzliches <code>CFRelease</code> war ein Double-Free, der Prozess starb vor der ersten Ausgabe. Der Workflow hat es nicht gemerkt, weil der Exit-Code einer Pipe der von <code>tee</code> ist. <code>pipefail</code> ist jetzt gesetzt und der Schritt schlaegt fehl, wenn die Ausgabe leer bleibt.</li>
+<li><code>IOServiceGetMatchingService</code> verbraucht die Referenz des Matching-Dictionaries. Ein zusätzliches <code>CFRelease</code> war ein Double-Free, der Prozess starb vor der ersten Ausgabe. Der Workflow hat es nicht gemerkt, weil der Exit-Code einer Pipe der von <code>tee</code> ist. <code>pipefail</code> ist jetzt gesetzt und der Schritt schlägt fehl, wenn die Ausgabe leer bleibt.</li>
 <li><code>CGDisplayScreenSize</code> liefert ein <code>CGSize</code> in Millimeter, einen Wert pro Seite, keine Diagonale. Der Compiler hatte recht.</li>
-<li>Der Intel-Runner-Pool bewegte sich nicht: jeder Lauf blieb in der Warteschlange, bis der naechste Push ihn abbrach. Beide Architekturen werden jetzt auf einem Runner gebaut, das SDK traegt beide Slices, das Intel-Binary laeuft unter Rosetta.</li>
+<li>Der Intel-Runner-Pool bewegte sich nicht: jeder Lauf blieb in der Warteschlange, bis der nächste Push ihn abbrach. Beide Architekturen werden jetzt auf einem Runner gebaut, das SDK trägt beide Slices, das Intel-Binary läuft unter Rosetta.</li>
 </ul>
 
 <h3>Drei Ausgabefehler, die erst der Mac-Build zeigte</h3>
 <ul>
-<li class="warn"><strong>Lastfeld abgeschnitten.</strong> Der Puffer war 16 Byte. Ein farbiges Lastfeld braucht Farbcode, Prozentzahl, das Wort und den Reset, zusammen 25 Byte. Ab 50 Prozent Last fehlte der Text, die Zeile las <code>64%</code> ohne Wort und ohne Reset. Geprueft mit 70 Prozent Last.</li>
-<li class="warn"><strong>Refresh-Rate mal tausend.</strong> Beide Kollektoren speichern die Rate als Bruchteil eines Hertz, Windows liefert 60000/1000 fuer 60 Hz, Linux liest 60/1. Die Division genuegte. Ein 240-Hz-Monitor zeigte 240000 Hz. Gegen das DRM-Fixture geprueft, jetzt steht dort 240 Hz wie im Plan.</li>
-<li class="warn"><strong>Integrierte GPU unsichtbar.</strong> Ein integrierter Adapter erschien nur in der Vollansicht, ein Rechner ohne diskrete Grafik zeigte also gar keine GPU-Zeile. Das ist der Fall auf jedem Apple-Silicon-Mac. Ohne diskreten Adapter wird der integrierte jetzt wie einer behandelt. Rechner mit diskreter Grafik sind unveraendert.</li>
+<li class="warn"><strong>Lastfeld abgeschnitten.</strong> Der Puffer war 16 Byte. Ein farbiges Lastfeld braucht Farbcode, Prozentzahl, das Wort und den Reset, zusammen 25 Byte. Ab 50 Prozent Last fehlte der Text, die Zeile las <code>64%</code> ohne Wort und ohne Reset. Geprüft mit 70 Prozent Last.</li>
+<li class="warn"><strong>Refresh-Rate mal tausend.</strong> Beide Kollektoren speichern die Rate als Bruchteil eines Hertz, Windows liefert 60000/1000 für 60 Hz, Linux liest 60/1. Die Division genügte. Ein 240-Hz-Monitor zeigte 240000 Hz. Gegen das DRM-Fixture geprüft, jetzt steht dort 240 Hz wie im Plan.</li>
+<li class="warn"><strong>Integrierte GPU unsichtbar.</strong> Ein integrierter Adapter erschien nur in der Vollansicht, ein Rechner ohne diskrete Grafik zeigte also gar keine GPU-Zeile. Das ist der Fall auf jedem Apple-Silicon-Mac. Ohne diskreten Adapter wird der integrierte jetzt wie einer behandelt. Rechner mit diskreter Grafik sind unverändert.</li>
 </ul>
 
 <h3>Verifikation</h3>
 <ul>
 <li class="ok">macOS arm64 und x86_64 bauen im CI auf einem echten Mac ohne Warnung, beide laufen. Der x86_64-Lauf unter Rosetta liefert dieselbe Zeilenstruktur.</li>
-<li class="ok">Linux-Ausgabe vor und nach der Aenderung zeilenweise verglichen: 0 Unterschiede. Das gilt fuer die Standardansicht und fuer <code>-a</code>.</li>
-<li class="ok">Windows sauber neu gebaut, 0 Warnungen, AddressSanitizer sauber, Ausgabe bei 70 Prozent Last geprueft.</li>
-<li class="ok">Linux-Binary auf der Debian-VM ausgefuehrt. Die VM hat nur eine integrierte GPU und zeigt die GPU-Zeile jetzt an, vorher fehlte sie.</li>
-<li class="ok">Pruefsummen aller vier Binaries gegen <code>SHA256SUMS</code> bestaetigt.</li>
+<li class="ok">Linux-Ausgabe vor und nach der Änderung zeilenweise verglichen: 0 Unterschiede. Das gilt für die Standardansicht und für <code>-a</code>.</li>
+<li class="ok">Windows sauber neu gebaut, 0 Warnungen, AddressSanitizer sauber, Ausgabe bei 70 Prozent Last geprüft.</li>
+<li class="ok">Linux-Binary auf der Debian-VM ausgeführt. Die VM hat nur eine integrierte GPU und zeigt die GPU-Zeile jetzt an, vorher fehlte sie.</li>
+<li class="ok">Prüfsummen aller vier Binaries gegen <code>SHA256SUMS</code> bestätigt.</li>
 </ul>
 
 <h2>Protokoll vom 19.10.2026 (9. Session) — v3.4: ein Renderer, POSIX gefixt, Display auf beiden</h2>
 <h3>Ausgangslage</h3>
 <ul>
-<li>Das Linux-Binary behauptete im Release <code>3.3</code> die Version <code>3.3</code>, verhielt sich aber wie <code>0.2.4</code>. Statt das in den Release-Notes zu verstecken, wurde der Weg gewaehlt, den POSIX-Kollektoren denselben State fuellen zu lassen wie die Windows und den gemeinsamen Renderer zu benutzen.</li>
+<li>Das Linux-Binary behauptete im Release <code>3.3</code> die Version <code>3.3</code>, verhielt sich aber wie <code>0.2.4</code>. Statt das in den Release-Notes zu verstecken, wurde der Weg gewählt, den POSIX-Kollektoren denselben State füllen zu lassen wie die Windows und den gemeinsamen Renderer zu benutzen.</li>
 <li>Referenz fastfetch 2.69.0 auf demselben Rechner: 45 ms Standardansicht, 31 ms Modulboden, 11,5 MB. hardfetch 0.2.4: 283 ms.</li>
 </ul>
 <h3>Befunde, die erst auf der Debian-VM sichtbar wurden</h3>
 <ul>
-<li class="ok"><strong>POSIX-Build war seit 3.0 kaputt.</strong> Die Behauptung, er kompiliere weiter, war eine Symbolabgleich-Pruefung und kein Build. <code>output.c</code> ist gemeinsam und hatte die Win32-Aufrufe fuer Screen-Clear, Cursor und Tastatur ohne Guard; die Legacy-Deklarationen lagen in einem <code>#ifdef __cplusplus</code>-Zweig; <code>main.c</code> includierte <code>cpu_temp.h</code> und <code>memory_spd.h</code> nicht.</li>
-<li class="ok"><strong><code>-a</code> brauchte 5,2 s bis zum ersten Bild</strong>, Standardansicht 20 ms. <code>getaddrinfo</code> und <code>connect</code> hatten kein Timeout und liefen auf dem Main-Thread vor dem Rendern. Der Resolver der VM haengt zeitweise rund 5 s, meistens ist er in 2 ms fertig.</li>
-<li class="ok"><strong>RAM-Speed war unter Linux gar nicht implementiert</strong>, nur nicht erreichbar. Ein eigener SMBIOS-Parser wurde verworfen, weil sich die Offsets ohne echte Struct-Bytes nicht pruefen liessen; stattdessen <code>dmidecode</code>, wie fastfetch es unter Linux auch nutzt.</li>
-<li class="ok"><strong>Thermal- und DRM-GPU-Pfade waren ungetestet</strong>, weil WSL weder Thermalzone noch DRM-Karte hat. Beide nehmen ihr sysfs-Wurzelverzeichnis aus einem Makro, das zur Laufzeit nichts aendert, und liessen sich gegen eine Fixture fahren: 47 &#176;C aus der Zone <code>x86_pkg_temp</code> statt <code>acpitz</code>, AMD-iGPU mit 512 MiB.</li>
+<li class="ok"><strong>POSIX-Build war seit 3.0 kaputt.</strong> Die Behauptung, er kompiliere weiter, war eine Symbolabgleich-Prüfung und kein Build. <code>output.c</code> ist gemeinsam und hatte die Win32-Aufrufe für Screen-Clear, Cursor und Tastatur ohne Guard; die Legacy-Deklarationen lagen in einem <code>#ifdef __cplusplus</code>-Zweig; <code>main.c</code> includierte <code>cpu_temp.h</code> und <code>memory_spd.h</code> nicht.</li>
+<li class="ok"><strong><code>-a</code> brauchte 5,2 s bis zum ersten Bild</strong>, Standardansicht 20 ms. <code>getaddrinfo</code> und <code>connect</code> hatten kein Timeout und liefen auf dem Main-Thread vor dem Rendern. Der Resolver der VM hängt zeitweise rund 5 s, meistens ist er in 2 ms fertig.</li>
+<li class="ok"><strong>RAM-Speed war unter Linux gar nicht implementiert</strong>, nur nicht erreichbar. Ein eigener SMBIOS-Parser wurde verworfen, weil sich die Offsets ohne echte Struct-Bytes nicht prüfen liessen; stattdessen <code>dmidecode</code>, wie fastfetch es unter Linux auch nutzt.</li>
+<li class="ok"><strong>Thermal- und DRM-GPU-Pfade waren ungetestet</strong>, weil WSL weder Thermalzone noch DRM-Karte hat. Beide nehmen ihr sysfs-Wurzelverzeichnis aus einem Makro, das zur Laufzeit nichts ändert, und liessen sich gegen eine Fixture fahren: 47 &#176;C aus der Zone <code>x86_pkg_temp</code> statt <code>acpitz</code>, AMD-iGPU mit 512 MiB.</li>
 </ul>
 <h3>Fixes in 3.4</h3>
 <ul>
-<li class="ok">Public-IP auf eigenem Thread, <code>connect</code> non-blocking mit 1500-ms-<code>poll</code>, Join vor dem ersten Bild begrenzt. 25 Laeufe auf der VM: Maximum 166 ms.</li>
-<li class="ok"><code>disk_volume</code> war <code>char[8]</code>, <code>/home/user</code> wurde auf genau 7 Zeichen zu <code>/home/u</code>, <code>statvfs</code> scheiterte, die Disk-Zeile verschwand. Meine erste Erklaerung, es liege an zwei abgeschnittenen Pfadkomponenten, war falsch.</li>
-<li class="ok">Ausgabe ueber ssh nutzte ein nacktes LF. Ein Terminal rueckt eine Zeile runter, ohne die Spalte zurueckzusetzen; ab Spalte 78 verschmolzen Zeilen. Auf Windows nur nachgemessen worden, daher nicht aufgefallen.</li>
+<li class="ok">Public-IP auf eigenem Thread, <code>connect</code> non-blocking mit 1500-ms-<code>poll</code>, Join vor dem ersten Bild begrenzt. 25 Läufe auf der VM: Maximum 166 ms.</li>
+<li class="ok"><code>disk_volume</code> war <code>char[8]</code>, <code>/home/user</code> wurde auf genau 7 Zeichen zu <code>/home/u</code>, <code>statvfs</code> scheiterte, die Disk-Zeile verschwand. Meine erste Erklärung, es liege an zwei abgeschnittenen Pfadkomponenten, war falsch.</li>
+<li class="ok">Ausgabe über ssh nutzte ein nacktes LF. Ein Terminal rückt eine Zeile runter, ohne die Spalte zurückzusetzen; ab Spalte 78 verschmolzen Zeilen. Auf Windows nur nachgemessen worden, daher nicht aufgefallen.</li>
 <li class="ok"><code>/proc/cpuinfo</code> steckt den Takt in den Modellnamen, die CPU-Zeile las sich <code>i3-7100T CPU @ 3.40GHz</code>.</li>
-<li class="ok"><code>uptime_collect</code> ohne <code>debug_begin</code>, das Log landete im Host-Modul. Zwei Threads schrieben ungeschuetzt auf stderr und schnitten sich die Zeilen halb. PCI-Vendor <code>1B36</code> war als QEMU beschriftet, ist aber Reds QXL.</li>
+<li class="ok"><code>uptime_collect</code> ohne <code>debug_begin</code>, das Log landete im Host-Modul. Zwei Threads schrieben ungeschützt auf stderr und schnitten sich die Zeilen halb. PCI-Vendor <code>1B36</code> war als QEMU beschriftet, ist aber Reds QXL.</li>
 <li class="ok">Load sprang zwischen 0 und 100 Prozent: ein 20-ms-Fenster auf zwei vCPUs sind vier Ticks, unter drei ist der Quotient Rauschen. distribution <code>VERSION</code> statt <code>VERSION_ID</code>, damit <code>13.7 (trixie)</code> statt <code>13</code> erscheint.</li>
 </ul>
 <h3>Zwei Regressionen, die erst die Messung auf der VM zeigte</h3>
 <ul>
-<li class="warn">Der Lookup-Thread wurde <code>pthread_detach</code>et und danach gejoint. Ein Join auf einem detach-Thread kehrt sofort zurueck, die Wartezeit fand nie statt.</li>
+<li class="warn">Der Lookup-Thread wurde <code>pthread_detach</code>et und danach gejoint. Ein Join auf einem detach-Thread kehrt sofort zurück, die Wartezeit fand nie statt.</li>
 <li class="warn"><code>fetch_one</code> wertete das Ende des Response-Bodys als Fehler, weil ein Flag gleichzeitig &#8220;Austausch erfolgreich&#8221; und &#8220;mehr Daten&#8221; transportierte. Die Antwort kam korrekt an und wurde trotzdem verworfen.</li>
 </ul>
 <h3>Messwerte</h3>
 <ul>
 <li>Windows: Standardansicht 49 ms, <code>-a</code> 230 ms, <code>-d</code> 50 ms. Ausgangspunkt 283 ms.</li>
-<li>Prozessboden dieser Maschine: leeres C-Programm 3,3 ms. Die frueher gemessenen 23 ms waren Overhead der Messmethode, nicht Windows.</li>
+<li>Prozessboden dieser Maschine: leeres C-Programm 3,3 ms. Die früher gemessenen 23 ms waren Overhead der Messmethode, nicht Windows.</li>
 <li>Linux (Debian 13, 2 vCPUs): Standardansicht 20 ms, <code>-a</code> 155 ms.</li>
 <li>Beide Builds 0 Warnungen, AddressSanitizer sauber.</li>
-<li class="ok">Live-Modus am echten Terminal geprueft: laeuft stabil, <code>q</code>, <code>Esc</code> und <code>Ctrl+C</code> beenden ihn. Der Redraw laeuft unter Windows ueber die Win32-Console-API, weil Escape-Sequenzen nicht in jeder Konsoleneinrichtung ausgewertet werden und dann Texte der vorherigen Iteration stehen bleiben. POSIX nutzt die Sequenzen, dort aber mit CRLF, weil ein nacktes LF die Spalte nicht zuruecksetzt und Zeilen zusammenfallen.</li>
+<li class="ok">Live-Modus am echten Terminal geprüft: läuft stabil, <code>q</code>, <code>Esc</code> und <code>Ctrl+C</code> beenden ihn. Der Redraw läuft unter Windows über die Win32-Console-API, weil Escape-Sequenzen nicht in jeder Konsoleneinrichtung ausgewertet werden und dann Texte der vorherigen Iteration stehen bleiben. POSIX nutzt die Sequenzen, dort aber mit CRLF, weil ein nacktes LF die Spalte nicht zurücksetzt und Zeilen zusammenfallen.</li>
 </ul>
 <h3>Packaging und der winget-Versuch</h3>
 <ul>
-<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Pruefsummen schon oeffentlich verteilt waren und ein Ueberschreiben sie ungueltig machen wuerde.</li>
-<li class="ok">scoop laeuft direkt aus dem Manifest-URL ohne Bucket. brew-Formel deckt Linux ab.</li>
-<li class="warn">Der erste winget-Versuch war ein Single-File-Manifest mit <code>NestedInstallerType</code>, das winget 1.29 nicht annimmt. Der lokale Validator war keine Hilfe: <code>winget validate --manifest</code> meldete bei einem heruntergeladenen, veroeffentlichten Paket aus winget-pkgs genauso <code>multi file manifest is incomplete</code> wie bei unserem.</li>
+<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Prüfsummen schon öffentlich verteilt waren und ein Überschreiben sie ungültig machen würde.</li>
+<li class="ok">scoop läuft direkt aus dem Manifest-URL ohne Bucket. brew-Formel deckt Linux ab.</li>
+<li class="warn">Der erste winget-Versuch war ein Single-File-Manifest mit <code>NestedInstallerType</code>, das winget 1.29 nicht annimmt. Der lokale Validator war keine Hilfe: <code>winget validate --manifest</code> meldete bei einem heruntergeladenen, veröffentlichten Paket aus winget-pkgs genauso <code>multi file manifest is incomplete</code> wie bei unserem.</li>
 <li class="ok">Daher die Struktur von einem bestehenden Manifest im Repository abgeschrieben: Versionsdatei mit <code>DefaultLocale</code>, <code>defaultLocale</code>-Datei mit Publisher, Lizenz, Tags und Release Notes, <code>installer</code>-Datei als <code>portable</code> mit dem Befehlsalias <code>hrf</code>. Pfad <code>manifests/0/00vez/hardfetch/3.4/</code>.</li>
-<li class="ok">PR gegen <code>microsoft/winget-pkgs</code> erstellt, Nummer 455559. <code>Pull Request Validation</code> und <code>Manifest Validation</code> liefen gruen, die uebrigen Pruefungen waren noch offen.</li>
-<li class="warn">PR auf Wunsch des Nutzers zurueckgezogen und geschlossen, Branch im Fork geloescht, der Fork <code>00vez/winget-pkgs</code> besteht noch, weil das Token keine <code>delete_repo</code>-Berechtigung hat. Das Manifest liegt fertig im Baum und kann jederzeit neu eingereicht werden.</li>
+<li class="ok">PR gegen <code>microsoft/winget-pkgs</code> erstellt, Nummer 455559. <code>Pull Request Validation</code> und <code>Manifest Validation</code> liefen grün, die übrigen Prüfungen waren noch offen.</li>
+<li class="warn">PR auf Wunsch des Nutzers zurückgezogen und geschlossen, Branch im Fork gelöscht, der Fork <code>00vez/winget-pkgs</code> besteht noch, weil das Token keine <code>delete_repo</code>-Berechtigung hat. Das Manifest liegt fertig im Baum und kann jederzeit neu eingereicht werden.</li>
 </ul>
 
 
 <ul>
-<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Pruefsummen schon oeffentlich verteilt waren und ein Ueberschreiben sie ungueltig machen wuerde.</li>
-<li class="ok">scoop laeuft direkt aus dem Manifest-URL ohne Bucket. brew-Formel deckt Linux ab. Das winget-Manifest liegt im kanonischen Multi-File-Layout, lokal aber nicht validierbar: <code>winget validate --manifest</code> meldet auf winget 1.29.380 auch fuer ein veroeffentlichtes Paket <code>incomplete</code>, die Struktur wurde deshalb von einem bestehenden Manifest im Repository abgeschrieben.</li>
+<li class="ok">Release <code>3.4</code> mit beiden Binaries und <code>SHA256SUMS</code>. <code>3.3</code> bewusst unangetastet, weil dessen Prüfsummen schon öffentlich verteilt waren und ein Überschreiben sie ungültig machen würde.</li>
+<li class="ok">scoop läuft direkt aus dem Manifest-URL ohne Bucket. brew-Formel deckt Linux ab. Das winget-Manifest liegt im kanonischen Multi-File-Layout, lokal aber nicht validierbar: <code>winget validate --manifest</code> meldet auf winget 1.29.380 auch für ein veröffentlichtes Paket <code>incomplete</code>, die Struktur wurde deshalb von einem bestehenden Manifest im Repository abgeschrieben.</li>
 </ul>
 
 <h2>Protokoll vom 30.08.2026 (8. Session) — HID-Fallback für Temp N/A (M4)</h2>
@@ -286,7 +351,7 @@ th { border-bottom-color: #ddd; }
 </ul>
 <h3>Verifikation</h3>
 <ul>
-<li class="ok"><strong>Build:</strong> Release kompiliert mit Exit 0. Korrekturen: MSVC-C verlangt benannten Parameter in Funktions-<em>definition</em> (C++ erlaubt unbenannt) — <code>fetch_proc(LPVOID arg)</code>; <code>strncpy</code>-C4996-Warnung in <code>ip_addr.c</code> durch <code>memcpy(name,"Net",4)</code> ersetzt.</li>
+<li class="ok"><strong>Build:</strong> Release kompiliert mit Exit 0. Korrekturen: MSVC-C verlangt benannten Parameter in der Funktionsdefinition (C++ erlaubt unbenannt) — <code>fetch_proc(LPVOID arg)</code>; <code>strncpy</code>-C4996-Warnung in <code>ip_addr.c</code> durch <code>memcpy(name,"Net",4)</code> ersetzt.</li>
 <li class="ok"><strong>Ausgabe:</strong> zeigt alle aktiven Interfaces (Tailscale, Ethernet 2, Npcap Loop, WLAN, vEthernet) je mit IP/CIDR; <code>Public  178.190.95.110</code> (api.ipify.org) korrekt aufgelöst.</li>
 <li class="ok"><strong>Wall-Zeit:</strong> 5 Läufe = 0,23–0,26 s (vorher 0,22 s). Öffentliche IP schloss innerhalb des Hauptpfads ab; keine messbare Verzögerung dank Async-Thread.</li>
 </ul>
@@ -342,20 +407,21 @@ th { border-bottom-color: #ddd; }
 <h2>Code und Repository</h2>
 <ul>
 <li>Repo: <code>C:\Users\v\Documents\lib\hardfetch</code>, Remote <code>github.com/00vez/hardfetch</code>, Branch <code>master</code>.</li>
-<li>Gemeinsam fuer beide Plattformen: <code>src/main.c</code> (Einstieg, Flags, Threads, Live-Loop), <code>src/render.c</code> (gesamte Ausgabe), <code>src/fmt.c</code>, <code>src/edid.c</code>, <code>src/output.c</code>, <code>src/debug.c</code>, <code>src/hf_state.c</code>.</li>
-<li>Nur Windows: <code>os_info.c</code>, <code>host.c</code>, <code>kernel.c</code>, <code>uptime.c</code>, <code>shell.c</code>, <code>terminal.c</code>, <code>memory.c</code>, <code>storage.c</code>, <code>ip_addr.c</code>, <code>public_ip.c</code>, <code>display.c</code>, <code>cpu.c</code> sowie <code>memory_spd.cpp</code>, <code>cpu_temp.cpp</code>, <code>gpu.cpp</code> fuer WMI und COM.</li>
+<li>Gemeinsam für beide Plattformen: <code>src/main.c</code> (Einstieg, Flags, Threads, Live-Loop), <code>src/render.c</code> (gesamte Ausgabe), <code>src/fmt.c</code>, <code>src/edid.c</code>, <code>src/output.c</code>, <code>src/debug.c</code>, <code>src/hf_state.c</code>.</li>
+<li>Nur Windows: <code>os_info.c</code>, <code>host.c</code>, <code>kernel.c</code>, <code>uptime.c</code>, <code>shell.c</code>, <code>terminal.c</code>, <code>memory.c</code>, <code>storage.c</code>, <code>ip_addr.c</code>, <code>public_ip.c</code>, <code>display.c</code>, <code>cpu.c</code> sowie <code>memory_spd.cpp</code>, <code>cpu_temp.cpp</code>, <code>gpu.cpp</code> für WMI und COM.</li>
 <li>Nur POSIX: <code>src/posix/</code> mit denselben Modulnamen. Der POSIX-Zweig in <code>CMakeLists.txt</code> listet jetzt dieselben gemeinsamen Dateien wie der Windows-Zweig.</li>
 <li>Tot: <code>src/gpu_nvidia.c</code> und <code>src/gpu_nvidia.h</code>, in keinem Target mehr enthalten.</li>
-<li>Packaging: <code>packaging/scoop/</code>, <code>packaging/winget/</code>, <code>packaging/brew/</code>. Release-Notizen liegen als <code>release-notes-3.4.md</code> im Baum.</li>
-<li><code>plan.md</code> ist die Design-Doku, <code>progress.html</code> dieses Protokoll.</li>
+<li>Packaging: <code>packaging/scoop/</code>, <code>packaging/winget/</code>, <code>packaging/brew/</code>. Die veroeffentlichten Notizen liegen in den Release-Bodies auf GitHub.</li>
+<li><code>docs/progress.html</code> dieses Protokoll, mit Projektziel, Architekturentscheidungen, Datenquellen je Plattform, Gotchas und dem Verlauf jeder Session. Lesen mit <code>cath docs/progress.html</code>.</li>
+<li>Die vorgebauten Binaries liegen nicht im Repository, sondern in den Releases mit <code>SHA256SUMS</code> daneben.</li>
 </ul>
 
 <h2>Build, Tests und Skripte</h2>
 <ul>
-<li><code>cmake -B build -A x64</code> und <code>cmake --build build --config Release</code> fuer Windows.</li>
-<li>Linux ueber WSL: <code>cmake -B build-wsl -S . -DCMAKE_BUILD_TYPE=Release</code> und <code>cmake --build build-wsl -j4</code>.</li>
+<li><code>cmake -B build -A x64</code> und <code>cmake --build build --config Release</code> für Windows.</li>
+<li>Linux über WSL: <code>cmake -B build-wsl -S . -DCMAKE_BUILD_TYPE=Release</code> und <code>cmake --build build-wsl -j4</code>.</li>
 <li><code>hrf</code> als PowerShell-Alias. <code>HF_ASAN=ON</code> baut eine AddressSanitizer-Variante; die DLL liegt im Verzeichnis der MSVC-Tools.</li>
-<li>Kein Testframework. Verifikation laeuft ueber Flag-Matrix, Ausgabevergleich und Messungen auf der Zielmaschine.</li>
+<li>Kein Testframework. Verifikation läuft über Flag-Matrix, Ausgabevergleich und Messungen auf der Zielmaschine.</li>
 <li class="warn">Nicht inkrementell bauen. Zwei Warnungen und ein gemeinsamer Header-Fehler fielen erst nach <code>--clean-first</code> auf, weil CMake Objektdateien wiederverwendet. Vor jeder Abnahme sauber bauen.</li>
 </ul>
 
@@ -381,9 +447,9 @@ th { border-bottom-color: #ddd; }
 <li>Windows: <code>bin\Release\-hardfetch.exe</code>; Linux: <code>bin/hardfetch</code>. Beide aus dem Release <code>3.4</code> und byte-identisch mit <code>bin/</code>.</li>
 <li>scoop: <code>scoop install https://raw.githubusercontent.com/00vez/hardfetch/master/packaging/scoop/hardfetch.json</code>.</li>
 <li>Ohne Paketmanager: <code>iwr https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe -OutFile hardfetch.exe</code> unter Windows, <code>curl -fsSL .../3.4/hardfetch -o ~/.local/bin/hardfetch &amp;&amp; chmod +x ~/.local/bin/hardfetch</code> unter Linux.</li>
-<li>Pruefsummen: <code>sha256sum -c SHA256SUMS</code> bzw. <code>Get-FileHash</code>. Die Werte muessen mit den Manifesten uebereinstimmen, sonst bricht die Installation ab.</li>
+<li>Prüfsummen: <code>sha256sum -c SHA256SUMS</code> bzw. <code>Get-FileHash</code>. Die Werte müssen mit den Manifesten übereinstimmen, sonst bricht die Installation ab.</li>
 <li><code>bin/hardfetch-darwin-arm64</code> stammt noch vom 30.08.2025 und ist kein Release-Stand.</li>
-<li>Keine Adminrechte noetig. Verwaist laeuft der Lookup-Thread hoechstens bis zum Prozessende, die Ausgabe wartet nie darauf.</li>
+<li>Keine Adminrechte nötig. Verwaist läuft der Lookup-Thread höchstens bis zum Prozessende, die Ausgabe wartet nie darauf.</li>
 </ul>
 
 </body>
