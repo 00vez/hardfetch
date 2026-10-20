@@ -85,21 +85,12 @@ void os_collect(hf_state* s)
 #if defined(__APPLE__)
     {
         char release[64] = {0};
-        char* dot;
 
         mac_sw_vers(s->os_product, sizeof(s->os_product), release, sizeof(release));
-        /* Darwin reports 23.5.0 while the marketing version is 14.5, so the
-           first component is the version and the rest is the build, the same
-           split the Windows build makes. */
-        dot = strchr(release, '.');
-        if (dot) {
-            *dot = 0;
-            snprintf(s->os_display_version, sizeof(s->os_display_version), "%s", release);
-            snprintf(s->os_build_str, sizeof(s->os_build_str), "%s", dot + 1);
-        } else {
-            snprintf(s->os_display_version, sizeof(s->os_display_version), "%s", release);
-            s->os_build_str[0] = 0;
-        }
+        /* The product already carries the marketing version, so there is no
+           second version to show. The Darwin release is the build, the same
+           place the other POSIX platforms put the kernel release. */
+        snprintf(s->os_build_str, sizeof(s->os_build_str), "%s", release);
     }
 #else
     /* NAME and VERSION_ID give the same shape as the Windows build, which

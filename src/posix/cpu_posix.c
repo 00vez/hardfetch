@@ -201,8 +201,13 @@ void cpu_collect_live(hf_state* s)
         if (sysctlbyname("hw.cpufrequency", &hz, &len, NULL, 0) == 0 && hz > 0) {
             mhz = (double)hz / 1000000.0;
         } else {
-            uint32_t p_mhz = appleMaxFreqMHz("voltage-states5-sram");
-            if (p_mhz > 0) mhz = (double)p_mhz;
+            len = sizeof(hz);
+            if (sysctlbyname("hw.cpufrequency_max", &hz, &len, NULL, 0) == 0 && hz > 0)
+                mhz = (double)hz / 1000000.0;
+            else {
+                uint32_t p_mhz = appleMaxFreqMHz("voltage-states5-sram");
+                if (p_mhz > 0) mhz = (double)p_mhz;
+            }
         }
     }
 #else
