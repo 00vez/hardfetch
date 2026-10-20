@@ -96,10 +96,16 @@ static void collect_apple(hf_state* s)
 
         mode = CGDisplayCopyDisplayMode(ids[i]);
         if (mode) {
-            /* The pixel size, not the point size: a Retina panel runs at
-               twice the logical resolution, and the row is about pixels. */
-            d->width = (unsigned int)CGDisplayModeGetPixelWidth(mode);
-            d->height = (unsigned int)CGDisplayModeGetPixelHeight(mode);
+            /* The size of the mode in points, which is the resolution the
+               desktop runs at. The pixel size of a Retina panel would be
+               twice that and would not match what the other platforms
+               report for a scaled display. */
+            d->width = (unsigned int)CGDisplayModeGetWidth(mode);
+            d->height = (unsigned int)CGDisplayModeGetHeight(mode);
+            if (d->width == 0 || d->height == 0) {
+                d->width = (unsigned int)CGDisplayModeGetPixelWidth(mode);
+                d->height = (unsigned int)CGDisplayModeGetPixelHeight(mode);
+            }
             {
                 double hz = CGDisplayModeGetRefreshRate(mode);
                 if (hz > 0.0) {

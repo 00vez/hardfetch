@@ -72,6 +72,9 @@ else()
     # use themselves, so the Darwin namespace is asked for explicitly.
     if(APPLE)
         add_compile_definitions(_DARWIN_C_SOURCE _POSIX_C_SOURCE=200809L)
+        # A fixed target so the build does not depend on the SDK default.
+        # kIOMainPortDefault needs macOS 12, which is the floor.
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
     else()
         add_compile_definitions(_POSIX_C_SOURCE=200809L)
     endif()

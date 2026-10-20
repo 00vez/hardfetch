@@ -116,7 +116,7 @@ static void render_os(const hf_state* s)
 
 static void render_cpu(const hf_state* s)
 {
-    char clock[24], load[16], temp[24], detail[128];
+    char clock[24], load[32], temp[24], detail[128];
 
     print_row_green("CPU", s->cpu_name);
 
@@ -201,7 +201,7 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
     }
 
     {
-        char load[24], temp[24], power[16], line[96];
+        char load[32], temp[24], power[16], line[96];
         fmt_load(load, sizeof(load), (double)g->load_pct / 100.0, "Load");
         fmt_temp(temp, sizeof(temp), (int)g->temp_c);
         snprintf(power, sizeof(power), "%u W", g->power_w);
@@ -246,14 +246,26 @@ static void render_gpu_one(const hf_gpu* g, const char* label)
 static int render_gpu(const hf_state* s)
 {
     int primary_shown = 0;
+    int has_discrete = 0;
+
+    for (int i = 0; i < s->gpu_count; i++) {
+        if (!s->gpus[i].integrated) { has_discrete = 1; break; }
+    }
 
     for (int i = 0; i < s->gpu_count; i++) {
         const hf_gpu* g = &s->gpus[i];
         char label[16];
 
         if (g->integrated) {
-            if (!s->options_all) continue;
-            snprintf(label, sizeof(label), "GPU %d", i + 1);
+            /* Integrated adapters only get a row of their own in the full
+               view. When the machine has no discrete adapter, the
+               integrated one is the only adapter there is and is shown
+               like one. */
+            if (has_discrete && !s->options_all) continue;
+            if (has_discrete || s->options_all)
+                snprintf(label, sizeof(label), "GPU %d", i + 1);
+            else
+                snprintf(label, sizeof(label), "GPU");
         } else {
             /* Discrete adapters carry the unnumbered GPU label. */
             snprintf(label, sizeof(label), "GPU");
@@ -328,9 +340,11 @@ static void render_display(const hf_state* s)
             resolution[0] = 0;
 
         if (d->refresh_den > 0) {
-            unsigned int hzValue = (unsigned int)
-                (((unsigned long long)d->refresh_num * 1000ULL + d->refresh_den / 2) /
-                 d->refresh_den);
+            /* Both collectors store the rate as a fraction of a hertz: the
+               Windows rational is 60000/1000 for 60 Hz, the Linux mode
+               string is read as 60/1. */
+            unsigned int hzValue =
+                (d->refresh_num + d->refresh_den / 2) / d->refresh_den;
             snprintf(hz, sizeof(hz), "%u Hz", hzValue);
         } else {
             hz[0] = 0;

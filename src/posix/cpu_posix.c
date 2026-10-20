@@ -192,8 +192,18 @@ void cpu_collect_live(hf_state* s)
 
 #if defined(__APPLE__)
     {
-        uint32_t p_mhz = appleMaxFreqMHz("voltage-states5-sram");
-        if (p_mhz > 0) mhz = (double)p_mhz;
+        /* The nominal clock comes from the kernel. A live clock would need
+           the voltage states of the processor, which only Intel Macs
+           publish, so on Apple silicon this is the base clock. */
+        uint64_t hz = 0;
+        size_t len = sizeof(hz);
+
+        if (sysctlbyname("hw.cpufrequency", &hz, &len, NULL, 0) == 0 && hz > 0) {
+            mhz = (double)hz / 1000000.0;
+        } else {
+            uint32_t p_mhz = appleMaxFreqMHz("voltage-states5-sram");
+            if (p_mhz > 0) mhz = (double)p_mhz;
+        }
     }
 #else
     {

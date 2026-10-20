@@ -72,7 +72,13 @@ void battery_collect(hf_state* s)
 
     (void)read_int(bat, CFSTR("CurrentCapacity"), &current);
     (void)read_int(bat, CFSTR("MaxCapacity"), &maximum);
-    (void)read_int(bat, CFSTR("IsCharging"), &charging);
+    if (!read_int(bat, CFSTR("IsCharging"), &charging)) {
+        /* Older machines do not have the boolean, they have a state where
+           two means charging on mains. */
+        int32_t state = 0;
+        if (read_int(bat, CFSTR("BatteryChargeState"), &state))
+            charging = (state == 2);
+    }
     (void)read_int(bat, CFSTR("Temperature"), &temperature);
     (void)read_int(bat, CFSTR("CycleCount"), &cycles);
     IOObjectRelease(bat);
