@@ -68,7 +68,13 @@ if(WIN32)
     set_target_properties(hardfetch PROPERTIES LINKER_LANGUAGE C)
 else()
     # Linux, WSL2 and macOS share the v0.3.0 layout and the same renderer.
-    add_compile_definitions(_POSIX_C_SOURCE=200809L)
+    # On macOS _POSIX_C_SOURCE alone hides the BSD types the system headers
+    # use themselves, so the Darwin namespace is asked for explicitly.
+    if(APPLE)
+        add_compile_definitions(_DARWIN_C_SOURCE)
+    else()
+        add_compile_definitions(_POSIX_C_SOURCE=200809L)
+    endif()
     add_compile_options(-Wall -Werror=implicit-function-declaration)
     add_executable(hardfetch
         src/main.c
