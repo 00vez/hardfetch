@@ -69,6 +69,10 @@ mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/
 # macOS, Apple silicon
 mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch-macos-arm64 -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
 ```
+```bash
+# macOS, Intel
+mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch-macos-x64 -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
+```
 
 Both report themselves:
 
