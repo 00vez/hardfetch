@@ -5,3 +5,8 @@ build-wsl/
 *.swp
 smc-mba-m4.txt
 smc-*.txt
+
+# The local archive of old releases and removed documents. It lives next to
+# the repository, in C:\Users\v\Documents\lib\archiv, and must never be
+# committed.
+archiv/

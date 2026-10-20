@@ -118,6 +118,14 @@ redirected output it prints one frame and exits rather than looping forever.
 `src/*.c`, the Windows WMI and COM parts in `src/*.cpp`, the POSIX collectors
 in `src/posix/`. `src/gpu_nvidia.c` is dead and in no target.
 
+`src/CMakeLists.txt` sits with the sources it lists. Its paths are relative
+to `src/`, and the include directory is reached as
+`${CMAKE_CURRENT_SOURCE_DIR}/../include`.
+
+The local archive of the removed releases and documents lives outside the
+repository, in `C:\Users\v\Documents\lib\archiv\`. It is in the
+gitignore so it can never be committed by accident.
+
 ## Docs
 
 `docs/progress.html` is the session log, read it with
