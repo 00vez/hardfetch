@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+
+PackageIdentifier: 00vez.hardfetch
+PackageVersion: 3.5
+PackageLocale: en-US
+Publisher: 00vez
+PublisherUrl: https://github.com/00vez
+PublisherSupportUrl: https://github.com/00vez/hardfetch/issues
+PackageUrl: https://github.com/00vez/hardfetch
+PackageName: hardfetch
+License: MIT
+LicenseUrl: https://github.com/00vez/hardfetch/blob/master/LICENSE
+ReleaseNotes: |-
+  macOS is now part of the release. Windows, Linux and macOS produce the same
+  layout through a shared renderer, and the macOS binaries are built and run
+  on a real Mac by a workflow.
+
+  macOS gained the three rows it was missing: the display, read through
+  CoreGraphics with the monitor name from the EDID in the IOKit display
+  service, the machine model from hw.model, and the battery from the IOKit
+  AppleSmartBattery service.
+
+  The macOS run on the build machine made visible three faults the other
+  platforms had as well. The load field had a buffer that was too narrow,
+  so from 50 percent load upwards the text was cut off. The refresh rate
+  was multiplied by a thousand, so a 240 Hz monitor showed 240000 Hz. An
+  integrated adapter was only shown in the full view, so a machine without
+  a discrete adapter showed no GPU at all.
+ReleaseNotesUrl: https://github.com/00vez/hardfetch/releases/tag/3.5
+ShortDescription: Compact system info tool, neofetch style, in a single 216 KB executable
+Description: |-
+  hardfetch prints operating system, board, uptime, CPU, RAM, GPU, disk,
+  network and display information in a compact block, in the spirit of
+  neofetch.
+
+  It is a single statically linked executable of about 216 KB that needs no
+  configuration and starts in roughly 50 milliseconds, where neofetch and
+  fastfetch take considerably longer.
+
+  Flags:
+  -a   adds build, kernel, shell, terminal, iGPU, display, every network
+       interface and the public IP address
+  -l   refreshes the view in place; q, Esc or Ctrl+C quits
+  -d   prints per module timings and the data source that was used
+
+  Windows, Linux and macOS produce the same layout. A field the platform
+  cannot supply is left out rather than guessed.
+Tags:
+- cli
+- system
+- hardware
+- monitoring
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

@@ -1,14 +1,14 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
 
 PackageIdentifier: 00vez.hardfetch
-PackageVersion: 3.4
+PackageVersion: 3.5
 InstallerType: portable
 Commands:
 - hrf
-ReleaseDate: 2026-10-19
+ReleaseDate: 2026-10-20
 Installers:
-- InstallerUrl: https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe
+- InstallerUrl: https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch.exe
   Architecture: x64
-  InstallerSha256: 52debc4bf2404f581bf5d2095456856bde266a9931c37bd761993abac763c7ba
+  InstallerSha256: 93a2186ed99c6890ffdaf64481bba4dbc9941bd44dec5f6b456f3f604e8e4b63
 ManifestType: installer
 ManifestVersion: 1.9.0

@@ -6,7 +6,7 @@ macOS is in. Three platforms, one output format.
 | self-reports | `v3.5` | `v3.5` | `v3.5` | `v3.5` |
 | flags | `-a -l -d -v -h` | same | same | same |
 | layout | shared renderer | same renderer | same renderer | same renderer |
-| startup | about 50 ms | about 20 ms | TBD | TBD |
+| startup | about 50 ms | about 20 ms | 170 to 220 ms | TBD |
 
 All four are built from the same tree and print through the same
 `render.c`, `fmt.c`, `edid.c`, `output.c` and `debug.c`. That is what

@@ -6,7 +6,7 @@ The standard view takes about 28 ms from process start. No config file, no
 daemon, no assets to download.
 
 ```
-hardfetch v3.4 | user@DESKTOP-EXAMPLE
+hardfetch v3.5 | user@DESKTOP-EXAMPLE
 
 OS           Windows 11 Pro 25H2 | x86_64
 Build        26200.5674
@@ -44,30 +44,34 @@ Tailscale  100.88.253.13/32
 
 ```powershell
 # Windows, PowerShell, ohne Zusatzprogramme
-iwr https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe -OutFile hardfetch.exe
+iwr https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch.exe -OutFile hardfetch.exe
 ```
 ```bash
 # Linux und WSL2
-mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
+mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
+```
+```bash
+# macOS, Apple silicon
+mkdir -p ~/.local/bin && curl -fsSL https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch-macos-arm64 -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
 ```
 
 Both report themselves:
 
 ```
-hardfetch v3.4
+hardfetch v3.5
 ```
 
 Verify what you downloaded against the published checksums:
 
 ```bash
-curl -fsSLO https://github.com/00vez/hardfetch/releases/download/3.4/SHA256SUMS
+curl -fsSLO https://github.com/00vez/hardfetch/releases/download/3.5/SHA256SUMS
 sha256sum -c SHA256SUMS
 ```
 
 Prebuilt binaries are also in `bin/`:
 - Windows: `bin/hardfetch.exe`
 - Linux / WSL2: `bin/hardfetch`
-- macOS arm64: `bin/hardfetch-darwin-arm64`, still on the 0.2.4 build and not part of any release
+- macOS: `bin/hardfetch-macos-arm64`, `bin/hardfetch-macos-x64`
 
 Build from source needs Visual Studio 2022 x64 and CMake 3.20:
 
@@ -97,16 +101,17 @@ is `--debug` now. `--net` and `-n` were removed; `-a` covers that ground.
 
 ## Platform support
 
-Windows and Linux/WSL2 produce the same layout and the same flags. What
-differs is only what each platform can read:
+Windows, Linux/WSL2 and macOS produce the same layout and the same flags.
+What differs is only what each platform can read:
 
-| | Windows | Linux |
-|---|---|---|
-| display mode | QueryDisplayConfig | `/sys/class/drm/*/modes` |
-| monitor name and size | EDID in the registry | EDID in `/sys/class/drm/*/edid` |
-| CPU temperature | perflib thermal zone provider | `/sys/class/thermal` |
-| RAM speed and CAS | WMI | dmidecode, needs privileges |
-| GPU | D3DKMT plus NVML | sysfs plus NVML |
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| display mode | QueryDisplayConfig | `/sys/class/drm/*/modes` | CoreGraphics |
+| monitor name and size | EDID in the registry | EDID in `/sys/class/drm/*/edid` | EDID in the IOKit display service |
+| CPU temperature | perflib thermal zone provider | `/sys/class/thermal` | AppleSMC |
+| RAM speed and CAS | WMI | dmidecode, needs privileges | none |
+| GPU | D3DKMT plus NVML | sysfs plus NVML | IOKit |
+| battery | none | none | IOKit `AppleSmartBattery` |
 
 A field the platform cannot supply is left out rather than guessed. On WSL
 the Linux view is shorter than the Windows one on the same machine: no
@@ -114,7 +119,8 @@ thermal zone, no DRM connector and no `/proc/net/thermal_zone*`, so the CPU
 temperature, the second GPU and the display row are absent there. All three
 are implemented and were checked against fixture sysfs trees.
 
-macOS is not covered by this release.
+macOS needs macOS 12 or newer. The binaries are built and run on a real
+Mac by a workflow, and the output of the runner is kept as the evidence.
 
 ### Package managers
 
@@ -127,8 +133,8 @@ scoop install https://raw.githubusercontent.com/00vez/hardfetch/master/packaging
 brew install 00vez/hardfetch/hardfetch
 ```
 
-The winget manifest is in `packaging/winget/00vez.hardfetch.yaml`. Putting it
-in a package source still needs an upstream pull request, which is not done.
+The winget manifest is in `packaging/winget/manifests/`. Putting it in a
+package source still needs an upstream pull request, which is not done.
 
 ## Runtime dependencies
 
@@ -143,10 +149,11 @@ and raw SMBIOS tables have been closed to user mode since Windows 10 1607.
 
 ## Layout
 
-`src/main.c` is the entry point on both platforms. Collectors live in
+`src/main.c` is the entry point on every platform. Collectors live in
 `src/*.c`, the Windows WMI and COM parts in `src/*.cpp`, and the POSIX
 collectors in `src/posix/`. `render.c`, `fmt.c`, `edid.c`, `output.c` and
-`debug.c` are shared by both, which is what keeps the output identical.
+`debug.c` are shared by all of them, which is what keeps the output
+identical.
 
 Docs: `AGENTS.md` (build and quirks), `plan.md` (spec), `progress.html`
 (log).

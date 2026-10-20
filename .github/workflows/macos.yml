@@ -58,8 +58,13 @@ jobs:
       - name: Startup time
         run: |
           ls -l build-arm64/hardfetch build-x64/hardfetch
+          echo "arm64"
           for i in 1 2 3 4 5; do
             /usr/bin/time -p ./build-arm64/hardfetch > /dev/null
+          done
+          echo "x86_64"
+          for i in 1 2 3 4 5; do
+            /usr/bin/time -p arch -x86_64 ./build-x64/hardfetch > /dev/null
           done
 
       - name: Checksums

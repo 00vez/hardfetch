@@ -1,4 +1,4 @@
-# hardfetch — Implementierungsplan (realisiert v3.4, Stand 19.10.2026)
+# hardfetch — Implementierungsplan (realisiert v3.5, Stand 20.10.2026)
 
 > Historie bis v0.2.4 steht in `progress.html`. Der Originalplan für
 > Windows 0.1 ist weiter unten unverändert erhalten.
@@ -12,8 +12,8 @@
 | **Ein Renderer** | `main.c`, `render.c`, `fmt.c`, `edid.c`, `output.c`, `debug.c` werden von Windows **und** POSIX gemeinsam gebaut |
 | **Collect/Render** | Jedes Modul liefert `*_collect(hf_state*)`. Ohne das gibt es kein `-l` und kein `-d` |
 | **Statisch vs. flüchtig** | Statisch einmalig, flüchtig pro Live-Tick |
-| **Portabilität** | MSVC **/MT** statisch, keine VC++ Redist nötig, 219 KB |
-| **Plattform** | Windows 11 x64 ist das Testziel. Linux und WSL2 liefern dasselbe Layout. macOS arm64 ist unverändert auf 0.2.4 |
+| **Portabilität** | MSVC **/MT** statisch, keine VC++ Redist nötig, 216 KB |
+| **Plattform** | Windows 11 x64 ist das Testziel. Linux, WSL2 und macOS liefern dasselbe Layout. Der macOS-Build laeuft im CI auf einem echten Mac |
 | **Zwei Threads** | Worker sammelt GPU, Shell, Terminal, Display. Main den Rest. Das Load-Fenster überdeckt die Collection |
 | **Nichts raten** | Fehlt eine Quelle, entfällt die Zeile. Kein geschätzter Wert, keine erfundene Refresh-Rate aus einem 128-Byte-EDID |
 | **Ausgabe** | Label-Spalte 14, Detailzeilen bei 13, Trenner `|` |
@@ -25,7 +25,7 @@
 ## Ziel-Output
 
 ```
-hardfetch v3.4 | user@host
+hardfetch v3.5 | user@host
 
 OS           Windows 11 Pro 25H2 | x86_64
 Build        26200.9457

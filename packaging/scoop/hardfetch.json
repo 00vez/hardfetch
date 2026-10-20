@@ -1,17 +1,17 @@
 {
-    "version": "3.4",
+    "version": "3.5",
     "description": "Compact system info tool, neofetch style, in C",
     "homepage": "https://github.com/00vez/hardfetch",
     "license": "MIT",
-    "url": "https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe#hardfetch.exe",
-    "hash": "52debc4bf2404f581bf5d2095456856bde266a9931c37bd761993abac763c7ba",
+    "url": "https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch.exe#hardfetch.exe",
+    "hash": "93a2186ed99c6890ffdaf64481bba4dbc9941bd44dec5f6b456f3f604e8e4b63",
     "bin": "hardfetch.exe",
     "suggest": {
         "Windows Terminal": "winget install --id Microsoft.WindowsTerminal"
     },
     "checkver": "https://api.github.com/repos/00vez/hardfetch/releases/latest",
     "autoupdate": {
-        "url": "https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch.exe#hardfetch.exe",
-        "hash": "https://github.com/00vez/hardfetch/releases/download/3.4/SHA256SUMS"
+        "url": "https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch.exe#hardfetch.exe",
+        "hash": "https://github.com/00vez/hardfetch/releases/download/3.5/SHA256SUMS"
     }
 }

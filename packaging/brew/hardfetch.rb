@@ -1,26 +1,17 @@
 class Hardfetch < Formula
   desc "Compact system info tool, neofetch style, in C"
   homepage "https://github.com/00vez/hardfetch"
-  url "https://github.com/00vez/hardfetch/releases/download/3.4/hardfetch"
-  sha256 "0c2844073594c09f8766418f2afcce15f34081e93e8f44118a95ef4fb13dcba7"
+  url "https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch"
+  sha256 "3ba7bc2d1742a628b8a3b8d43847e6c4a437f316f136fb0d22d65f00130e2cc1"
   license "MIT"
-  version "3.4"
+  version "3.5"
 
-  # Only the Linux build exists. macOS is still on the 0.2.4 collector set,
-  # so there is nothing to install here yet.
+  # The Linux build. macOS has its own binaries in the same release, see
+  # hardfetch-macos-arm64 and hardfetch-macos-x64.
   depends_on arch: :linux
 
   def install
     bin.install "hardfetch"
-  end
-
-  def caveats
-    return unless OS.mac?
-    <<~EOS
-      hardfetch is published for Linux and Windows only at the moment.
-      The macOS build still uses the 0.2.4 collector set and is not
-      packaged. See https://github.com/00vez/hardfetch/releases
-    EOS
   end
 
   test do
