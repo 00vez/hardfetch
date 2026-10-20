@@ -18,7 +18,7 @@ jobs:
 
       - name: Build arm64
         run: |
-          cmake -B build-arm64 -S . -DCMAKE_BUILD_TYPE=Release \
+          cmake -B build-arm64 -S src -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_OSX_ARCHITECTURES=arm64
           cmake --build build-arm64 -j4
           lipo -archs build-arm64/hardfetch | tee arch-arm64.txt
@@ -26,7 +26,7 @@ jobs:
 
       - name: Build x86_64
         run: |
-          cmake -B build-x64 -S . -DCMAKE_BUILD_TYPE=Release \
+          cmake -B build-x64 -S src -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_OSX_ARCHITECTURES=x86_64
           cmake --build build-x64 -j4
           lipo -archs build-x64/hardfetch | tee arch-x64.txt

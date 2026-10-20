@@ -72,7 +72,7 @@ platform cannot supply is left out rather than guessed.
 ## Build
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -S src -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 ```
 

@@ -22,33 +22,33 @@ endif()
 
 if(WIN32)
     add_executable(hardfetch
-        src/main.c
-        src/output.c
-        src/render.c
-        src/fmt.c
-        src/debug.c
-        src/edid.c
-        src/hf_state.c
-        src/os_info.c
-        src/host.c
-        src/kernel.c
-        src/uptime.c
-        src/shell.c
-        src/terminal.c
-        src/ip_addr.c
-        src/public_ip.c
-        src/display.c
-        src/edid.c
-        src/gpu.cpp
-        src/cpu.c
-        src/cpu_temp.cpp
-        src/memory.c
-        src/memory_spd.cpp
-        src/battery.c
-        src/storage.c
+        main.c
+        output.c
+        render.c
+        fmt.c
+        debug.c
+        edid.c
+        hf_state.c
+        os_info.c
+        host.c
+        kernel.c
+        uptime.c
+        shell.c
+        terminal.c
+        ip_addr.c
+        public_ip.c
+        display.c
+        edid.c
+        gpu.cpp
+        cpu.c
+        cpu_temp.cpp
+        memory.c
+        memory_spd.cpp
+        battery.c
+        storage.c
     )
     target_compile_definitions(hardfetch PRIVATE HF_VERSION="${PROJECT_VERSION}")
-    target_include_directories(hardfetch PRIVATE include)
+    target_include_directories(hardfetch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
     target_link_libraries(hardfetch PRIVATE
         iphlpapi
         ws2_32
@@ -80,32 +80,32 @@ else()
     endif()
     add_compile_options(-Wall -Werror=implicit-function-declaration)
     add_executable(hardfetch
-        src/main.c
-        src/output.c
-        src/render.c
-        src/fmt.c
-        src/debug.c
-        src/edid.c
-        src/hf_state.c
-        src/posix/terminal_posix.c
-        src/posix/display_posix.c
-        src/posix/os_info_posix.c
-        src/posix/host_posix.c
-        src/posix/kernel_posix.c
-        src/posix/uptime_posix.c
-        src/posix/thread_posix.c
-        src/posix/shell_posix.c
-        src/posix/gpu_posix.c
-        src/posix/cpu_posix.c
-        src/posix/cpu_temp_posix.c
-        src/posix/memory_posix.c
-        src/posix/memory_spd_posix.c
-        src/posix/apple_pmgr.c
-        src/posix/apple_smc.c
-        src/posix/battery_posix.c
-        src/posix/storage_posix.c
-        src/posix/ip_addr_posix.c
-        src/posix/public_ip_posix.c
+        main.c
+        output.c
+        render.c
+        fmt.c
+        debug.c
+        edid.c
+        hf_state.c
+        posix/terminal_posix.c
+        posix/display_posix.c
+        posix/os_info_posix.c
+        posix/host_posix.c
+        posix/kernel_posix.c
+        posix/uptime_posix.c
+        posix/thread_posix.c
+        posix/shell_posix.c
+        posix/gpu_posix.c
+        posix/cpu_posix.c
+        posix/cpu_temp_posix.c
+        posix/memory_posix.c
+        posix/memory_spd_posix.c
+        posix/apple_pmgr.c
+        posix/apple_smc.c
+        posix/battery_posix.c
+        posix/storage_posix.c
+        posix/ip_addr_posix.c
+        posix/public_ip_posix.c
     )
     target_compile_definitions(hardfetch PRIVATE HF_VERSION="${PROJECT_VERSION}")
     target_link_libraries(hardfetch PRIVATE pthread dl)

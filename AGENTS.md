@@ -7,23 +7,25 @@ linked, 216 KB, no external runtime dependencies.
 
 ## Build
 
+The build file is `src/CMakeLists.txt`, so the source directory is `src`.
+
 ```powershell
 # Windows (VS 2022 x64)
-cmake -B build -A x64
+cmake -B build -S src -A x64
 cmake --build build --config Release
 .\build\Release\hardfetch.exe
 ```
 ```bash
 # Linux / WSL2
-cmake -B build-wsl -S . -DCMAKE_BUILD_TYPE=Release
+cmake -B build-wsl -S src -DCMAKE_BUILD_TYPE=Release
 cmake --build build-wsl -j4
 ./build-wsl/hardfetch
 ```
 ```bash
 # macOS, both architectures on one machine
-cmake -B build-arm64 -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake -B build-arm64 -S src -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
 cmake --build build-arm64 -j4
-cmake -B build-x64 -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64
+cmake -B build-x64 -S src -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64
 cmake --build build-x64 -j4
 ```
 
