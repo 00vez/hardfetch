@@ -42,6 +42,21 @@ Tailscale  100.88.253.13/32
 
 ## Install
 
+One line, and it picks the right binary for your platform. `latest`
+always points at the newest release:
+
+```powershell
+# Windows, PowerShell
+iwr https://github.com/00vez/hardfetch/releases/latest/download/hardfetch.exe -OutFile hardfetch.exe
+```
+```bash
+# Linux, WSL2, macOS und Git Bash unter Windows
+mkdir -p ~/.local/bin && case "$(uname -s)-$(uname -m)" in Linux-*) n=hardfetch ;; Darwin-arm64) n=hardfetch-macos-arm64 ;; Darwin-x86_64) n=hardfetch-macos-x64 ;; MINGW*|MSYS*|CYGWIN*) n=hardfetch.exe ;; esac && curl -fsSL "https://github.com/00vez/hardfetch/releases/latest/download/$n" -o ~/.local/bin/hardfetch && chmod +x ~/.local/bin/hardfetch
+```
+
+The macOS line works on both Apple silicon and Intel. If you prefer to
+name the version yourself:
+
 ```powershell
 # Windows, PowerShell, ohne Zusatzprogramme
 iwr https://github.com/00vez/hardfetch/releases/download/3.5/hardfetch.exe -OutFile hardfetch.exe
@@ -64,7 +79,7 @@ hardfetch v3.5
 Verify what you downloaded against the published checksums:
 
 ```bash
-curl -fsSLO https://github.com/00vez/hardfetch/releases/download/3.5/SHA256SUMS
+curl -fsSLO https://github.com/00vez/hardfetch/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS
 ```
 

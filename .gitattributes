@@ -1,0 +1,12 @@
+# Text files are checked out with LF on every platform.
+#
+# Without this, core.autocrlf=true on Windows puts CRLF into the working
+# copy, and a one-liner copied out of a local README breaks: the carriage
+# return lands on the last word of the line.
+#
+# The Windows build is unaffected, MSVC reads LF fine.
+* text=auto eol=lf
+
+# Binaries must not be touched.
+bin/* binary
+*.exe binary
