@@ -2,23 +2,24 @@
 #define HF_THREAD_POSIX_H
 
 #include <pthread.h>
-#include <semaphore.h>
 
 /* A thread that has to be waited for with a deadline.
-   macOS has no pthread_timedjoin_np, so the worker posts a semaphore when
-   it is done and the waiter counts that down instead of joining on a
-   timer. The semaphore is posted after the work function returns, so a
+   macOS has no pthread_timedjoin_np, so the worker marks itself done and
+   wakes the waiter, and the waiter waits with a deadline on the condition
+   variable. The flag is only set after the work function returned, so a
    successful wait means the thread really finished, not just that it is
    about to. */
 
 typedef void* (*hf_thread_fn)(void*);
 
 typedef struct {
-    pthread_t    handle;
-    sem_t        done;
-    hf_thread_fn fn;
-    void*        arg;
-    int          started;
+    pthread_t        handle;
+    pthread_mutex_t  lock;
+    pthread_cond_t   cond;
+    hf_thread_fn     fn;
+    void*            arg;
+    int              started;
+    int              done;
 } hf_thread_posix;
 
 /* 1 when the thread was started. */
@@ -29,7 +30,7 @@ int hf_thread_posix_start(hf_thread_posix* th, hf_thread_fn fn, void* arg);
 int hf_thread_posix_wait(hf_thread_posix* th, unsigned int timeoutMs);
 
 /* Releases what is left. A thread that did not finish keeps running, so
-   its semaphore stays valid until the process ends. */
+   its condition variable stays valid until the process ends. */
 void hf_thread_posix_close(hf_thread_posix* th);
 
 #endif

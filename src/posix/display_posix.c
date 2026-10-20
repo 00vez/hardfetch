@@ -3,6 +3,7 @@
 #include "../debug.h"
 #include "../edid.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,7 +92,6 @@ static void collect_apple(hf_state* s)
     for (uint32_t i = 0; i < count && s->display_count < HF_MAX_DISPLAYS; i++) {
         hf_display* d = &s->displays[s->display_count];
         CGDisplayModeRef mode;
-        double mmW = 0.0, mmH = 0.0;
 
         memset(d, 0, sizeof(*d));
 
@@ -108,16 +108,25 @@ static void collect_apple(hf_state* s)
                     d->refresh_den = 1;
                 }
             }
-            CGDisplayRelease(mode);
+            CGDisplayModeRelease(mode);
         }
         if (d->width == 0 || d->height == 0) {
             CGRect b = CGDisplayBounds(ids[i]);
             d->width = (unsigned int)b.size.width;
             d->height = (unsigned int)b.size.height;
         }
-        if (CGDisplayScreenSize(ids[i], &mmW, &mmH) && mmW > 0.0 && mmH > 0.0) {
-            d->phys_w_mm = (unsigned int)(mmW + 0.5);
-            d->phys_h_mm = (unsigned int)(mmH + 0.5);
+        /* CoreGraphics reports the diagonal of the panel in millimetres.
+           The width and height follow from it and the aspect ratio of the
+           mode, which is how the system derives them as well. */
+        {
+            double diagonal = CGDisplayScreenSize(ids[i]);
+            if (diagonal > 0.0 && d->width > 0 && d->height > 0) {
+                double px = (double)d->width;
+                double py = (double)d->height;
+                double len = sqrt(px * px + py * py);
+                d->phys_w_mm = (unsigned int)(diagonal * px / len + 0.5);
+                d->phys_h_mm = (unsigned int)(diagonal * py / len + 0.5);
+            }
         }
         d->primary = (s->display_count == 0);
 
