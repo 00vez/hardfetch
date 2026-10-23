@@ -32,15 +32,11 @@ IP (WLAN)    192.168.178.36/24
 
 ```powershell
 # Windows
-iwr https://github.com/00vez/hardfetch/releases/latest/download/hardfetch.exe -OutFile hardfetch.exe
+irm https://raw.githubusercontent.com/00vez/hardfetch/master/install.ps1 | iex
 ```
 ```bash
 # Linux, WSL2, macOS und Git Bash unter Windows
-os=$(uname -s) arch=$(uname -m); case "$os-$arch" in Linux-x86_64) n=hardfetch ;; Darwin-arm64) n=hardfetch-macos-arm64 ;; Darwin-x86_64) n=hardfetch-macos-x64 ;; MINGW*|MSYS*|CYGWIN*) n=hardfetch.exe ;; *) echo "hardfetch: no binary for $os $arch" >&2; false ;; esac && curl -fsSL "https://github.com/00vez/hardfetch/releases/latest/download/$n" -o hardfetch && chmod +x hardfetch
-```
-`latest` points at the newest release. The macOS line covers both Apple
-silicon and Intel.
-
+curl -fsSL https://raw.githubusercontent.com/00vez/hardfetch/master/install.sh | bash
 ## Usage
 
 ```
