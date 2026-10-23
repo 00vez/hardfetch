@@ -38,6 +38,7 @@ irm https://raw.githubusercontent.com/00vez/hardfetch/master/install.ps1 | iex
 # Linux, WSL2, macOS und Git Bash unter Windows
 curl -fsSL https://raw.githubusercontent.com/00vez/hardfetch/master/install.sh | bash
 ```
+```
 hardfetch            # standard view
 hardfetch -a         # plus build, kernel, shell, terminal, iGPU,
                      # display, every interface and the public IP
